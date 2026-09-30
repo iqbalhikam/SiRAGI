@@ -22,10 +22,16 @@ interface AiMenuDialogProps {
 
 const AVAILABLE_MODELS = [
   {
+    id: "gemini-3.5-flash-lite",
+    name: "Gemini 3.5 Flash Lite",
+    tag: "Terbaru & Cepat",
+    desc: "Model generasi 3.5 paling mutakhir, sangat cepat, dan efisien",
+  },
+  {
     id: "gemini-2.5-flash",
     name: "Gemini 2.5 Flash",
-    tag: "Direkomendasikan",
-    desc: "Cepat, cerdas, & efisien untuk perancangan menu harian",
+    tag: "Stabil",
+    desc: "Cerdas, seimbang, & efisien untuk perancangan menu harian",
   },
   {
     id: "gemini-2.5-pro",
@@ -36,14 +42,8 @@ const AVAILABLE_MODELS = [
   {
     id: "gemini-1.5-flash",
     name: "Gemini 1.5 Flash",
-    tag: "Cepat",
-    desc: "Model generasi sebelumnya dengan performa tangkas",
-  },
-  {
-    id: "gemini-1.5-pro",
-    name: "Gemini 1.5 Pro",
-    tag: "Kuat",
-    desc: "Model berkapasitas penalaran besar untuk instruksi kompleks",
+    tag: "Ringan",
+    desc: "Model cepat generasi sebelumnya",
   },
 ];
 
@@ -60,7 +60,7 @@ export function AiMenuDialog({
   onPopulateMenus,
 }: AiMenuDialogProps) {
   const [prompt, setPrompt] = useState("");
-  const [selectedModel, setSelectedModel] = useState("gemini-2.5-flash");
+  const [selectedModel, setSelectedModel] = useState("gemini-3.5-flash-lite");
   const [customModel, setCustomModel] = useState("");
   const [useCustomModel, setUseCustomModel] = useState(false);
   const [apiKey, setApiKey] = useState("");

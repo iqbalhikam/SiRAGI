@@ -27,17 +27,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // Default model to gemini-2.5-flash or user-selected model
-    const selectedModel = requestedModel?.trim() || "gemini-2.5-flash";
+    // Map legacy / deprecated models to the latest supported equivalents
+    const MODEL_ALIASES: Record<string, string> = {
+      "gemini-2.5-flash-lite": "gemini-3.5-flash-lite",
+      "gemini-flash-lite": "gemini-3.5-flash-lite",
+    };
+
+    let selectedModel = requestedModel?.trim() || "gemini-3.5-flash-lite";
+    if (MODEL_ALIASES[selectedModel]) {
+      selectedModel = MODEL_ALIASES[selectedModel];
+    }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: selectedModel,
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.3,
-      },
-      systemInstruction: `Anda adalah asisten ahli nutrisi dan gizi profesional yang bertugas merancang Rencana Anggaran Biaya (RAB) Makanan dan Menu Gizi.
+
+    const systemInstruction = `Anda adalah asisten ahli nutrisi dan gizi profesional yang bertugas merancang Rencana Anggaran Biaya (RAB) Makanan dan Menu Gizi.
 Instruksi ketat:
 1. HANYA kembalikan data dalam format JSON murni (array of objects), TANPA markdown wrap seperti \`\`\`json.
 2. Satuan bahan WAJIB salah satu dari 6 pilihan ini saja: "kg", "liter", "pcs", "pouch", "kotak", "ball".
@@ -58,21 +61,62 @@ STRUKTUR OUTPUT JSON:
       }
     ]
   }
-]`,
-    });
+]`;
 
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `Buatkan rancangan menu dan rincian bahan RAB gizi untuk instruksi berikut: "${prompt.trim()}". Berikan porsi realistis dengan minimal 2-4 menu dan beberapa bahan pokok per menu.`,
-            },
-          ],
+    const promptText = `Buatkan rancangan menu dan rincian bahan RAB gizi untuk instruksi berikut: "${prompt.trim()}". Berikan porsi realistis dengan minimal 2-4 menu dan beberapa bahan pokok per menu.`;
+
+    let result;
+    let modelUsed = selectedModel;
+
+    try {
+      const model = genAI.getGenerativeModel({
+        model: selectedModel,
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.3,
         },
-      ],
-    });
+        systemInstruction,
+      });
+
+      result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: promptText }] }],
+      });
+    } catch (primaryError: any) {
+      console.warn(`Gagal memanggil model ${selectedModel}:`, primaryError?.message);
+
+      // If model not found or deprecated, try automated fallback
+      const fallbackModelCandidates = ["gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"].filter(
+        (m) => m !== selectedModel
+      );
+
+      let success = false;
+      for (const fallbackModel of fallbackModelCandidates) {
+        try {
+          console.info(`Mencoba model fallback: ${fallbackModel}`);
+          const fallback = genAI.getGenerativeModel({
+            model: fallbackModel,
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.3,
+            },
+            systemInstruction,
+          });
+
+          result = await fallback.generateContent({
+            contents: [{ role: "user", parts: [{ text: promptText }] }],
+          });
+          modelUsed = fallbackModel;
+          success = true;
+          break;
+        } catch (fbErr: any) {
+          console.warn(`Fallback ke ${fallbackModel} juga gagal:`, fbErr?.message);
+        }
+      }
+
+      if (!success) {
+        throw primaryError;
+      }
+    }
 
     const responseText = result.response.text();
 
