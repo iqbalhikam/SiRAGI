@@ -42,6 +42,28 @@ export interface SheetRowRecord {
   keterangan: string;
 }
 
+export interface RabHistoryMenu {
+  namaMenu: string;
+  bahanList: {
+    id: string;
+    uraianBahan: string;
+    kuantitasAngka: number;
+    satuan: string;
+    keterangan: string;
+  }[];
+}
+
+export interface RabHistoryDocument {
+  id: string;
+  tanggal: string; // YYYY-MM-DD
+  tanggalFormatted: string; // e.g. Senin, 8 Juni 2026
+  lokasiSppg: string;
+  totalMenu: number;
+  totalBahan: number;
+  menuSummary: string; // Comma separated menu names
+  menus: RabHistoryMenu[];
+}
+
 export interface ExportReportResponse {
   success: boolean;
   spreadsheetId?: string;

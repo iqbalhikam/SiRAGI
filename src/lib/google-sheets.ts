@@ -1,5 +1,5 @@
 import { google, sheets_v4 } from "googleapis";
-import { SheetRowRecord } from "@/types/rab";
+import { SheetRowRecord, RabHistoryDocument, RabHistoryMenu } from "@/types/rab";
 import {
   formatFullHariTanggal,
   formatTanggalUpper,
@@ -745,4 +745,90 @@ export async function exportFormattedRabReport(
     rowCount: records.length,
     datesCount: uniqueDates.length,
   };
+}
+
+/**
+ * Retrieve and group historical data from Tab_Input_Harian by Tanggal and Lokasi SPPG
+ */
+export async function getGroupedRabHistory(
+  accessToken: string,
+  spreadsheetId: string,
+  filter?: { startDate?: string; endDate?: string; keyword?: string }
+): Promise<RabHistoryDocument[]> {
+  const allRecords = await getDailyRabEntries(accessToken, spreadsheetId);
+
+  // Filter records
+  let filtered = allRecords;
+
+  if (filter?.startDate) {
+    filtered = filtered.filter((r) => r.tanggal >= filter.startDate!);
+  }
+  if (filter?.endDate) {
+    filtered = filtered.filter((r) => r.tanggal <= filter.endDate!);
+  }
+  if (filter?.keyword && filter.keyword.trim()) {
+    const kw = filter.keyword.toLowerCase().trim();
+    filtered = filtered.filter(
+      (r) =>
+        r.lokasiSppg.toLowerCase().includes(kw) ||
+        r.namaMenu.toLowerCase().includes(kw) ||
+        r.uraianBahan.toLowerCase().includes(kw) ||
+        r.tanggal.includes(kw)
+    );
+  }
+
+  // Group by composite key: `${tanggal}___${lokasiSppg}`
+  const groupMap = new Map<string, SheetRowRecord[]>();
+  for (const r of filtered) {
+    const key = `${r.tanggal}___${r.lokasiSppg}`;
+    const list = groupMap.get(key) || [];
+    list.push(r);
+    groupMap.set(key, list);
+  }
+
+  const documents: RabHistoryDocument[] = [];
+
+  for (const [key, rows] of groupMap.entries()) {
+    const [tanggal, lokasiSppg] = key.split("___");
+
+    // Group items within this document by namaMenu
+    const menuMap = new Map<string, SheetRowRecord[]>();
+    for (const r of rows) {
+      const list = menuMap.get(r.namaMenu) || [];
+      list.push(r);
+      menuMap.set(r.namaMenu, list);
+    }
+
+    const menus: RabHistoryMenu[] = [];
+    for (const [namaMenu, items] of menuMap.entries()) {
+      menus.push({
+        namaMenu,
+        bahanList: items.map((item) => ({
+          id: item.id,
+          uraianBahan: item.uraianBahan,
+          kuantitasAngka: item.kuantitasAngka,
+          satuan: item.satuan,
+          keterangan: item.keterangan,
+        })),
+      });
+    }
+
+    const menuSummary = Array.from(menuMap.keys()).join(", ");
+
+    documents.push({
+      id: `DOC-${tanggal}-${lokasiSppg.replace(/\s+/g, "_")}`,
+      tanggal,
+      tanggalFormatted: formatFullHariTanggal(tanggal),
+      lokasiSppg,
+      totalMenu: menus.length,
+      totalBahan: rows.length,
+      menuSummary,
+      menus,
+    });
+  }
+
+  // Sort newest dates first (descending)
+  documents.sort((a, b) => b.tanggal.localeCompare(a.tanggal));
+
+  return documents;
 }
