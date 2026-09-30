@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SiRAGI - Sistem Pendataan RAB Gizi (Database-per-User)
 
-## Getting Started
+Aplikasi SaaS berbasis **Next.js (App Router)**, **Tailwind CSS**, dan **NextAuth.js** untuk sistem pendataan Rencana Anggaran Biaya (RAB) Gizi.
 
-First, run the development server:
+Aplikasi ini menggunakan konsep **"Database-per-User"**, di mana data pengguna tidak disimpan di server database terpusat, melainkan langsung di **Google Sheets** yang berada di dalam akun **Google Drive** masing-masing pengguna.
+
+---
+
+## ✨ Fitur Utama
+
+1. **Autentikasi & Auto-Provisioning Database**:
+   - Integrasi NextAuth.js dengan Google OAuth Provider.
+   - Meminta scope `drive.file` dan `spreadsheets`.
+   - Otomatis membuat file spreadsheet internal `Master_DB_RAB_Gizi` di Google Drive pengguna saat pertama kali login jika belum ada.
+2. **Struktur Master Sheet Terstandar**:
+   - Tab internal `Tab_Input_Harian` tanpa cell merging:
+     `ID`, `Tanggal`, `Lokasi SPPG`, `Nama Menu`, `Uraian Bahan`, `Kuantitas_Angka`, `Satuan`, `Keterangan`.
+3. **Formulir Interaktif Dinamis (SPA)**:
+   - Header Form: Tanggal pelaksanaan (Date picker) dan Lokasi SPPG.
+   - Dynamic Repeater: Tambah Menu dan Tambah Bahan di dalam setiap menu.
+   - Dropdown satuan standar: `kg`, `liter`, `pcs`, `pouch`, `kotak`, `ball`.
+   - Fitur 1-klik muat contoh menu gizi untuk pengujian instan.
+4. **Export Laporan Siap Cetak (Formatted Cells)**:
+   - Tombol **Generate Laporan RAB** berdasarkan tanggal yang dipilih.
+   - Menggunakan Google Sheets API `batchUpdate` untuk membuat file Spreadsheet baru di Drive pengguna: `Laporan RAB [Tanggal]`.
+   - Layout formal cetak manual: Cell merging, background warna biru korporat untuk header, dan border tabel.
+   - Tautan langsung untuk membuka file hasil generate di tab baru.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Framework**: [Next.js](https://nextjs.org/) (App Router, Turbopack)
+- **Bahasa**: [TypeScript](https://www.typescriptlang.org/)
+- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
+- **Autentikasi**: [NextAuth.js](https://next-auth.js.org/)
+- **Google API**: [googleapis](https://github.com/googleapis/google-api-nodejs-client) (Drive API v3, Sheets API v4)
+- **Icons**: [Lucide React](https://lucide.dev/)
+
+---
+
+## 🚀 Panduan Memulai
+
+### 1. Clone & Instalasi
+
+```bash
+git clone https://github.com/iqbalhikam/SiRAGI.git
+cd SiRAGI
+npm install
+```
+
+### 2. Konfigurasi Environment Variables
+
+Salin `.env.example` ke `.env.local`:
+
+```bash
+cp .env.example .env.local
+```
+
+Isi kredensial berikut:
+
+```env
+GOOGLE_CLIENT_ID=your_client_id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_client_secret
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=rahasia_acak_minimal_32_karakter
+```
+
+> **Catatan Pengaturan Google Cloud Console**:
+> - Aktifkan **Google Sheets API** dan **Google Drive API**.
+> - Tambahkan Authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
+
+### 3. Menjalankan Server Pengembangan
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Buka [http://localhost:3000](http://localhost:3000) di browser Anda.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 📄 Lisensi
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Distributed under the MIT License.
