@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { BahanInput, MenuInput } from "@/types/rab";
 import { MenuItemCard } from "./menu-item-card";
+import { AiMenuDialog } from "./ai-menu-dialog";
 import {
   Calendar,
   Building2,
@@ -14,6 +15,8 @@ import {
   Sparkles,
   RefreshCw,
   FolderSync,
+  Wand2,
+  Bot,
 } from "lucide-react";
 
 interface RabFormProps {
@@ -45,10 +48,21 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
   ]);
 
   const [submitting, setSubmitting] = useState(false);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
+
+  // Populate form with AI generated menu
+  const handlePopulateFromAi = (aiMenus: MenuInput[]) => {
+    setMenuList(aiMenus);
+    const totalBahanCount = aiMenus.reduce((sum, m) => sum + m.bahanList.length, 0);
+    setFeedback({
+      type: "success",
+      message: `✨ Asisten AI berhasil merancang ${aiMenus.length} menu dengan total ${totalBahanCount} bahan makanan! Formulir terisi otomatis, silakan sesuaikan sebelum disimpan.`,
+    });
+  };
 
   // Add new Menu block
   const handleAddMenu = () => {
@@ -333,7 +347,7 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
 
       {/* Repeater Section: Menu & Bahan */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="text-base font-bold text-slate-900">
               Rincian Menu & Bahan Makanan
@@ -347,14 +361,26 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={handleAddMenu}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 transition"
-          >
-            <Plus className="h-4 w-4" />
-            Tambah Menu Baru
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Tombol AI Generator Menu */}
+            <button
+              type="button"
+              onClick={() => setIsAiModalOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-500 px-4 py-2 text-xs font-bold text-white shadow-md shadow-indigo-500/25 hover:from-purple-700 hover:via-indigo-700 hover:to-pink-600 transition transform hover:-translate-y-0.5 cursor-pointer"
+            >
+              <Sparkles className="h-4 w-4" />
+              <span>✨ Generate Menu dengan AI</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleAddMenu}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 transition cursor-pointer"
+            >
+              <Plus className="h-4 w-4" />
+              Tambah Menu Baru
+            </button>
+          </div>
         </div>
 
         {/* List of Menu Cards */}
@@ -427,6 +453,13 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
           </button>
         </div>
       </div>
+
+      {/* Modal Dialog AI Perancang Menu */}
+      <AiMenuDialog
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        onPopulateMenus={handlePopulateFromAi}
+      />
     </form>
   );
 }

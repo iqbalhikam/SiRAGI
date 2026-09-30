@@ -88,3 +88,9 @@ Buka [http://localhost:3000](http://localhost:3000) di browser Anda.
 ## 📄 Lisensi
 
 Distributed under the MIT License.
+
+<!-- CHECKPOINT id="ckpt_munq3fuk_5m0pjx" time="2026-09-30T06:27:12.764Z" note="auto" fixes=0 questions=0 highlights=0 sections="" -->
+
+<!-- CHECKPOINT id="ckpt_munqgasx_gdz1k7" time="2026-09-30T06:37:12.753Z" note="auto" fixes=0 questions=0 highlights=0 sections="" -->
+
+<!-- CHECKPOINT id="ckpt_munqt5rq_zdflpj" time="2026-09-30T06:47:12.758Z" note="auto" fixes=0 questions=0 highlights=0 sections="" -->
