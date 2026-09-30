@@ -288,7 +288,8 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
   const totalBahan = menuList.reduce((acc, m) => acc + m.bahanList.length, 0);
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <>
+      <form onSubmit={handleSubmit} className="space-y-6">
       {/* Header Form Card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4 mb-5">
@@ -453,13 +454,14 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
           </button>
         </div>
       </div>
-
-      {/* Modal Dialog AI Perancang Menu */}
-      <AiMenuDialog
-        isOpen={isAiModalOpen}
-        onClose={() => setIsAiModalOpen(false)}
-        onPopulateMenus={handlePopulateFromAi}
-      />
     </form>
-  );
+
+    {/* Modal Dialog AI Perancang Menu */}
+    <AiMenuDialog
+      isOpen={isAiModalOpen}
+      onClose={() => setIsAiModalOpen(false)}
+      onPopulateMenus={handlePopulateFromAi}
+    />
+  </>
+);
 }

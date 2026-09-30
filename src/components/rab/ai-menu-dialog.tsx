@@ -81,8 +81,10 @@ export function AiMenuDialog({
 
   if (!isOpen) return null;
 
-  const handleGenerate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGenerate = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e && typeof e.preventDefault === "function") {
+      e.preventDefault();
+    }
     if (!prompt.trim()) {
       setError("Silakan tulis instruksi menu gizi yang diinginkan.");
       return;
@@ -177,7 +179,7 @@ export function AiMenuDialog({
         </div>
 
         {/* Content Form */}
-        <form onSubmit={handleGenerate} className="mt-5 space-y-5">
+        <div className="mt-5 space-y-5">
           {/* Prompt Input */}
           <div>
             <label className="block text-xs font-bold text-slate-800 mb-1.5">
@@ -187,6 +189,12 @@ export function AiMenuDialog({
               rows={3}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  handleGenerate();
+                }
+              }}
               placeholder="Contoh: Buatkan RAB menu gizi balita tinggi protein untuk 1 hari (3 kali makan + 1 snack sehat)..."
               className="w-full rounded-xl border border-slate-200 bg-slate-50/50 p-3.5 text-sm text-slate-800 placeholder-slate-400 focus:border-purple-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-purple-500"
               required
@@ -336,9 +344,10 @@ export function AiMenuDialog({
             </button>
 
             <button
-              type="submit"
+              type="button"
+              onClick={handleGenerate}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-purple-500/25 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 transition"
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-purple-500/25 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 transition cursor-pointer"
             >
               {loading ? (
                 <>
@@ -353,7 +362,7 @@ export function AiMenuDialog({
               )}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
