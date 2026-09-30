@@ -113,9 +113,13 @@ STRUKTUR OUTPUT JSON:
         }
       }
 
-      if (!success) {
+      if (!success || !result) {
         throw primaryError;
       }
+    }
+
+    if (!result) {
+      throw new Error("Gagal mendapatkan respons dari model Gemini.");
     }
 
     const responseText = result.response.text();

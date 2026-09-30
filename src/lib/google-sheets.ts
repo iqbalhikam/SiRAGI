@@ -1,5 +1,10 @@
 import { google, sheets_v4 } from "googleapis";
 import { SheetRowRecord } from "@/types/rab";
+import {
+  formatFullHariTanggal,
+  formatTanggalUpper,
+  formatIndoNumber,
+} from "@/lib/utils";
 
 const MASTER_DB_NAME = "Master_DB_RAB_Gizi";
 const TAB_INPUT_HARIAN = "Tab_Input_Harian";
@@ -272,40 +277,94 @@ export async function getDailyRabEntries(
   return records;
 }
 
+export interface ExportOptions {
+  targetDate?: string;
+  mode?: "single" | "all" | "range";
+  startDate?: string;
+  endDate?: string;
+}
+
 /**
- * Export RAB Report:
- * Reads entries for the given date, creates a NEW spreadsheet named "Laporan RAB [Tanggal]",
- * formats cells with cell merging, corporate blue header, and borders.
+ * Export RAB Report matching the exact Food Cost layout:
+ * - Top Banner: "FOOD COST (KEBUTUHAN BAHAN BAKU) HARIAN [RENTANG TANGGAL]" & "SPPG [LOKASI]"
+ *   (Merged A1:E1 and A2:E2, medium blue background, bold white text)
+ * - For each date:
+ *   - "Hari/Tanggal : [NamaHari], [d MMMM yyyy]"
+ *   - "Menu : [Menu1, Menu2, Menu3, ...]"
+ *   - Table Header: No | Menu | Uraian Bahan | Banyaknya | Keterangan
+ *     (Medium blue background, bold white text)
+ *   - Data Rows:
+ *     - No & Menu only printed on the first row of each menu, blank below
+ *     - Full solid black borders for all cells
+ *   - 1 blank row separator between dates
  */
 export async function exportFormattedRabReport(
   accessToken: string,
   masterSpreadsheetId: string,
-  targetDate: string
+  targetOrOptions: string | ExportOptions
 ) {
   const { drive, sheets } = getGoogleClients(accessToken);
 
-  // 1. Fetch entries for target date
-  const records = await getDailyRabEntries(accessToken, masterSpreadsheetId, targetDate);
+  const options: ExportOptions =
+    typeof targetOrOptions === "string"
+      ? { targetDate: targetOrOptions, mode: "single" }
+      : targetOrOptions;
 
-  if (records.length === 0) {
-    throw new Error(`Tidak ditemukan data RAB untuk tanggal ${targetDate}. Silakan input data terlebih dahulu.`);
+  // 1. Fetch entries from Tab_Input_Harian
+  let records: SheetRowRecord[] = [];
+  if (options.mode === "all") {
+    records = await getDailyRabEntries(accessToken, masterSpreadsheetId);
+  } else if (options.mode === "range" && options.startDate && options.endDate) {
+    const all = await getDailyRabEntries(accessToken, masterSpreadsheetId);
+    records = all.filter(
+      (r) => r.tanggal >= options.startDate! && r.tanggal <= options.endDate!
+    );
+  } else {
+    // Single date mode
+    const dateToFetch = options.targetDate || new Date().toISOString().split("T")[0];
+    records = await getDailyRabEntries(accessToken, masterSpreadsheetId, dateToFetch);
   }
 
-  const lokasi = records[0]?.lokasiSppg || "Unit SPPG";
-  const reportTitle = `Laporan RAB ${targetDate}`;
+  if (records.length === 0) {
+    throw new Error(
+      "Tidak ditemukan data RAB untuk tanggal atau rentang yang dipilih. Silakan input data terlebih dahulu."
+    );
+  }
+
+  // Sort chronologically by date
+  records.sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+
+  // Determine unique dates and SPPG location
+  const uniqueDates = Array.from(new Set(records.map((r) => r.tanggal)));
+  const lokasiSppg = records[0]?.lokasiSppg || "KALIANYAR KERTOSONO NGANJUK";
+
+  // Build Banner Title
+  let dateBannerText = "";
+  if (uniqueDates.length === 1) {
+    dateBannerText = formatTanggalUpper(uniqueDates[0]);
+  } else {
+    dateBannerText = `${formatTanggalUpper(uniqueDates[0])} - ${formatTanggalUpper(
+      uniqueDates[uniqueDates.length - 1]
+    )}`;
+  }
+
+  const row1Banner = `FOOD COST (KEBUTUHAN BAHAN BAKU) HARIAN ${dateBannerText}`;
+  const row2Banner = `SPPG ${lokasiSppg.toUpperCase()}`;
+
+  const spreadsheetTitle = `Laporan Food Cost RAB ${dateBannerText}`;
 
   // 2. Create NEW spreadsheet in user's Drive
   const newSheetRes = await sheets.spreadsheets.create({
     requestBody: {
       properties: {
-        title: reportTitle,
+        title: spreadsheetTitle,
       },
       sheets: [
         {
           properties: {
-            title: "Laporan Cetak",
+            title: "Laporan Food Cost",
             gridProperties: {
-              rowCount: Math.max(100, records.length + 30),
+              rowCount: Math.max(150, records.length * 3 + 50),
               columnCount: 10,
               hideGridlines: false,
             },
@@ -317,196 +376,124 @@ export async function exportFormattedRabReport(
 
   const newFileId = newSheetRes.data.spreadsheetId;
   if (!newFileId) {
-    throw new Error("Gagal membuat file Laporan baru di Google Drive");
+    throw new Error("Gagal membuat file spreadsheet baru di Google Drive.");
   }
 
   const sheetId = newSheetRes.data.sheets?.[0]?.properties?.sheetId ?? 0;
 
-  // 3. Organize rows & calculate cell merging
-  // Header block:
-  // Row 0: RENCANA ANGGARAN BIAYA (RAB) GIZI
-  // Row 1: Lokasi / SPPG : ...
-  // Row 2: Tanggal       : ...
-  // Row 3: [Blank]
-  // Row 4: Table Header: No | Menu | Uraian Bahan | Banyaknya | Keterangan
-  // Row 5+: Data rows
-  const titleRow = ["RENCANA ANGGARAN BIAYA (RAB) GIZI", "", "", "", ""];
-  const lokasiRow = [`Lokasi / SPPG : ${lokasi}`, "", "", "", ""];
-  const tanggalRow = [`Tanggal       : ${targetDate}`, "", "", "", ""];
-  const blankRow = ["", "", "", "", ""];
-  const tableHeader = ["No", "Menu", "Uraian Bahan", "Banyaknya", "Keterangan"];
-
+  // 3. Assemble sheet values & track layout sections
   const sheetValues: (string | number)[][] = [
-    titleRow,
-    lokasiRow,
-    tanggalRow,
-    blankRow,
-    tableHeader,
+    [row1Banner, "", "", "", ""],
+    [row2Banner, "", "", "", ""],
   ];
 
-  // Group records by Menu
-  const menuMap = new Map<string, SheetRowRecord[]>();
-  for (const r of records) {
-    const list = menuMap.get(r.namaMenu) || [];
-    list.push(r);
-    menuMap.set(r.namaMenu, list);
+  interface TableSection {
+    headerRowIndex: number;
+    startDataRowIndex: number;
+    endDataRowIndex: number;
+    hariTanggalRowIndex: number;
+    menuSummaryRowIndex: number;
   }
 
-  interface MergeDefinition {
-    startRowIndex: number;
-    endRowIndex: number;
-    startColumnIndex: number;
-    endColumnIndex: number;
-  }
+  const tableSections: TableSection[] = [];
 
-  const mergeRanges: MergeDefinition[] = [
-    // Merge Title Row A1:E1
-    { startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 5 },
-    // Merge Lokasi Row A2:E2
-    { startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 5 },
-    // Merge Tanggal Row A3:E3
-    { startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 5 },
-  ];
+  for (const date of uniqueDates) {
+    const dayRecords = records.filter((r) => r.tanggal === date);
 
-  let menuNumber = 1;
-  const tableStartRowIndex = 4; // index 4 is row 5 (table header)
-  let currentRowIndex = 5;      // data starts at index 5 (row 6)
-
-  for (const [menuName, items] of menuMap.entries()) {
-    const menuStartRow = currentRowIndex;
-    const itemsCount = items.length;
-
-    items.forEach((item, index) => {
-      const isFirst = index === 0;
-      sheetValues.push([
-        isFirst ? menuNumber : "",
-        isFirst ? menuName : "",
-        item.uraianBahan,
-        `${item.kuantitasAngka} ${item.satuan}`,
-        item.keterangan || "-",
-      ]);
-      currentRowIndex++;
-    });
-
-    // If menu has multiple bahan, merge No (Col 0) and Menu (Col 1)
-    if (itemsCount > 1) {
-      mergeRanges.push({
-        startRowIndex: menuStartRow,
-        endRowIndex: menuStartRow + itemsCount,
-        startColumnIndex: 0,
-        endColumnIndex: 1, // Merge Col A (No)
-      });
-      mergeRanges.push({
-        startRowIndex: menuStartRow,
-        endRowIndex: menuStartRow + itemsCount,
-        startColumnIndex: 1,
-        endColumnIndex: 2, // Merge Col B (Menu)
-      });
+    // Group items by Menu
+    const menuMap = new Map<string, SheetRowRecord[]>();
+    for (const r of dayRecords) {
+      const list = menuMap.get(r.namaMenu) || [];
+      list.push(r);
+      menuMap.set(r.namaMenu, list);
     }
 
-    menuNumber++;
+    const menuNamesJoined = Array.from(menuMap.keys()).join(", ");
+
+    // Day Header
+    const hariTanggalRowIndex = sheetValues.length;
+    sheetValues.push([`Hari/Tanggal : ${formatFullHariTanggal(date)}`, "", "", "", ""]);
+
+    const menuSummaryRowIndex = sheetValues.length;
+    sheetValues.push([`Menu : ${menuNamesJoined}`, "", "", "", ""]);
+
+    // Table Header
+    const headerRowIndex = sheetValues.length;
+    sheetValues.push(["No", "Menu", "Uraian Bahan", "Banyaknya", "Keterangan"]);
+
+    const startDataRowIndex = sheetValues.length;
+
+    let menuNumber = 1;
+    for (const [menuName, items] of menuMap.entries()) {
+      items.forEach((item, idx) => {
+        const isFirst = idx === 0;
+        const banyaknyaFormatted = `${formatIndoNumber(item.kuantitasAngka)} ${item.satuan}`;
+
+        sheetValues.push([
+          isFirst ? menuNumber : "",
+          isFirst ? menuName : "",
+          item.uraianBahan,
+          banyaknyaFormatted,
+          item.keterangan || "",
+        ]);
+      });
+      menuNumber++;
+    }
+
+    const endDataRowIndex = sheetValues.length;
+
+    tableSections.push({
+      headerRowIndex,
+      startDataRowIndex,
+      endDataRowIndex,
+      hariTanggalRowIndex,
+      menuSummaryRowIndex,
+    });
+
+    // 1 blank row between days
+    sheetValues.push(["", "", "", "", ""]);
   }
-
-  const tableEndRowIndex = currentRowIndex;
-
-  // Add summary / signature block
-  sheetValues.push(blankRow);
-  sheetValues.push(["", "", "", `Dicetak secara otomatis oleh SiRAGI`, ""]);
-  sheetValues.push(["", "", "", `Tanggal cetak: ${new Date().toLocaleDateString("id-ID")}`, ""]);
 
   // 4. Write data to sheet
   await sheets.spreadsheets.values.update({
     spreadsheetId: newFileId,
-    range: "'Laporan Cetak'!A1:E" + sheetValues.length,
+    range: `'Laporan Food Cost'!A1:E` + sheetValues.length,
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: sheetValues,
     },
   });
 
-  // 5. Build batchUpdate requests for formatting:
-  // - Background color: Corporate Blue for table header (#1e40af -> R: 0.118, G: 0.251, B: 0.686)
-  // - White text, bold, centered for table header
-  // - Borders for table: SOLID black/dark gray borders
-  // - Column widths:
-  //   Col A: 50px
-  //   Col B: 180px
-  //   Col C: 260px
-  //   Col D: 130px
-  //   Col E: 200px
+  // 5. BatchUpdate styling requests to match user's screenshot
+  // Medium blue hex #4a86e8 -> RGB: { red: 0.29, green: 0.525, blue: 0.91 }
+  const MEDIUM_BLUE = { red: 0.29, green: 0.525, blue: 0.91 };
+  const WHITE = { red: 1, green: 1, blue: 1 };
+  const BLACK = { red: 0, green: 0, blue: 0 };
+
   const requests: sheets_v4.Schema$Request[] = [];
 
-  // A. Merges
-  for (const m of mergeRanges) {
-    requests.push({
-      mergeCells: {
-        range: {
-          sheetId,
-          startRowIndex: m.startRowIndex,
-          endRowIndex: m.endRowIndex,
-          startColumnIndex: m.startColumnIndex,
-          endColumnIndex: m.endColumnIndex,
-        },
-        mergeType: "MERGE_ALL",
-      },
-    });
-  }
-
-  // B. Style Title (Row 0)
+  // A. Merges for Top Banner (Row 0 & Row 1 across Col A to E)
   requests.push({
-    repeatCell: {
-      range: {
-        sheetId,
-        startRowIndex: 0,
-        endRowIndex: 1,
-        startColumnIndex: 0,
-        endColumnIndex: 5,
-      },
-      cell: {
-        userEnteredFormat: {
-          textFormat: { bold: true, fontSize: 14, foregroundColor: { red: 0.1, green: 0.2, blue: 0.45 } },
-          horizontalAlignment: "CENTER",
-          verticalAlignment: "MIDDLE",
-        },
-      },
-      fields: "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment)",
+    mergeCells: {
+      range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 5 },
+      mergeType: "MERGE_ALL",
+    },
+  });
+  requests.push({
+    mergeCells: {
+      range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 5 },
+      mergeType: "MERGE_ALL",
     },
   });
 
-  // C. Style Metadata (Rows 1-2)
+  // Style Top Banner (Blue background, White bold text, centered, middle)
   requests.push({
     repeatCell: {
-      range: {
-        sheetId,
-        startRowIndex: 1,
-        endRowIndex: 3,
-        startColumnIndex: 0,
-        endColumnIndex: 5,
-      },
+      range: { sheetId, startRowIndex: 0, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 5 },
       cell: {
         userEnteredFormat: {
-          textFormat: { bold: true, fontSize: 10, foregroundColor: { red: 0.2, green: 0.2, blue: 0.2 } },
-          horizontalAlignment: "LEFT",
-        },
-      },
-      fields: "userEnteredFormat(textFormat,horizontalAlignment)",
-    },
-  });
-
-  // D. Style Table Header (Row 4: Blue background, White Bold text)
-  requests.push({
-    repeatCell: {
-      range: {
-        sheetId,
-        startRowIndex: tableStartRowIndex,
-        endRowIndex: tableStartRowIndex + 1,
-        startColumnIndex: 0,
-        endColumnIndex: 5,
-      },
-      cell: {
-        userEnteredFormat: {
-          backgroundColor: { red: 0.118, green: 0.251, blue: 0.686 }, // Deep Corporate Blue (#1e40af)
-          textFormat: { bold: true, fontSize: 11, foregroundColor: { red: 1, green: 1, blue: 1 } },
+          backgroundColor: MEDIUM_BLUE,
+          textFormat: { bold: true, fontSize: 11, foregroundColor: WHITE },
           horizontalAlignment: "CENTER",
           verticalAlignment: "MIDDLE",
         },
@@ -515,108 +502,234 @@ export async function exportFormattedRabReport(
     },
   });
 
-  // E. Style Table Data Rows (Vertical Alignment Middle, Text Alignment)
-  requests.push({
-    repeatCell: {
-      range: {
-        sheetId,
-        startRowIndex: tableStartRowIndex + 1,
-        endRowIndex: tableEndRowIndex,
-        startColumnIndex: 0,
-        endColumnIndex: 5,
-      },
-      cell: {
-        userEnteredFormat: {
-          textFormat: { fontSize: 10 },
-          verticalAlignment: "MIDDLE",
-        },
-      },
-      fields: "userEnteredFormat(textFormat,verticalAlignment)",
-    },
-  });
-
-  // Center align No (Col A) and Banyaknya (Col D)
-  requests.push({
-    repeatCell: {
-      range: {
-        sheetId,
-        startRowIndex: tableStartRowIndex + 1,
-        endRowIndex: tableEndRowIndex,
-        startColumnIndex: 0,
-        endColumnIndex: 1,
-      },
-      cell: {
-        userEnteredFormat: {
-          horizontalAlignment: "CENTER",
-        },
-      },
-      fields: "userEnteredFormat(horizontalAlignment)",
-    },
-  });
-
-  requests.push({
-    repeatCell: {
-      range: {
-        sheetId,
-        startRowIndex: tableStartRowIndex + 1,
-        endRowIndex: tableEndRowIndex,
-        startColumnIndex: 3,
-        endColumnIndex: 4,
-      },
-      cell: {
-        userEnteredFormat: {
-          horizontalAlignment: "CENTER",
-        },
-      },
-      fields: "userEnteredFormat(horizontalAlignment)",
-    },
-  });
-
-  // F. Table Borders (Header + Data)
+  // Banner Borders
   requests.push({
     updateBorders: {
-      range: {
-        sheetId,
-        startRowIndex: tableStartRowIndex,
-        endRowIndex: tableEndRowIndex,
-        startColumnIndex: 0,
-        endColumnIndex: 5,
-      },
-      top: { style: "SOLID_MEDIUM", color: { red: 0, green: 0, blue: 0 } },
-      bottom: { style: "SOLID_MEDIUM", color: { red: 0, green: 0, blue: 0 } },
-      left: { style: "SOLID_MEDIUM", color: { red: 0, green: 0, blue: 0 } },
-      right: { style: "SOLID_MEDIUM", color: { red: 0, green: 0, blue: 0 } },
-      innerHorizontal: { style: "SOLID", color: { red: 0.6, green: 0.6, blue: 0.6 } },
-      innerVertical: { style: "SOLID", color: { red: 0.6, green: 0.6, blue: 0.6 } },
+      range: { sheetId, startRowIndex: 0, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 5 },
+      top: { style: "SOLID", color: BLACK },
+      bottom: { style: "SOLID", color: BLACK },
+      left: { style: "SOLID", color: BLACK },
+      right: { style: "SOLID", color: BLACK },
+      innerHorizontal: { style: "SOLID", color: BLACK },
     },
   });
 
-  // G. Set Column Widths
-  const columnWidths = [50, 180, 260, 130, 200];
-  columnWidths.forEach((width, colIndex) => {
+  // B. Style each Date section
+  for (const section of tableSections) {
+    // Style Hari/Tanggal row
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: section.hariTanggalRowIndex,
+          endRowIndex: section.hariTanggalRowIndex + 1,
+          startColumnIndex: 0,
+          endColumnIndex: 5,
+        },
+        cell: {
+          userEnteredFormat: {
+            textFormat: { bold: true, fontSize: 10, foregroundColor: BLACK },
+            horizontalAlignment: "LEFT",
+            verticalAlignment: "MIDDLE",
+          },
+        },
+        fields: "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment)",
+      },
+    });
+
+    // Style Menu : ... row
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: section.menuSummaryRowIndex,
+          endRowIndex: section.menuSummaryRowIndex + 1,
+          startColumnIndex: 0,
+          endColumnIndex: 5,
+        },
+        cell: {
+          userEnteredFormat: {
+            textFormat: { bold: true, fontSize: 10, foregroundColor: BLACK },
+            horizontalAlignment: "LEFT",
+            verticalAlignment: "MIDDLE",
+          },
+        },
+        fields: "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment)",
+      },
+    });
+
+    // Style Table Header (Medium Blue background, White bold text, Centered)
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: section.headerRowIndex,
+          endRowIndex: section.headerRowIndex + 1,
+          startColumnIndex: 0,
+          endColumnIndex: 5,
+        },
+        cell: {
+          userEnteredFormat: {
+            backgroundColor: MEDIUM_BLUE,
+            textFormat: { bold: true, fontSize: 10, foregroundColor: WHITE },
+            horizontalAlignment: "CENTER",
+            verticalAlignment: "MIDDLE",
+          },
+        },
+        fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)",
+      },
+    });
+
+    // Style Data Rows
+    // Base style: 10pt font, Middle vertical alignment
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: section.startDataRowIndex,
+          endRowIndex: section.endDataRowIndex,
+          startColumnIndex: 0,
+          endColumnIndex: 5,
+        },
+        cell: {
+          userEnteredFormat: {
+            textFormat: { fontSize: 10, foregroundColor: BLACK },
+            verticalAlignment: "MIDDLE",
+          },
+        },
+        fields: "userEnteredFormat(textFormat,verticalAlignment)",
+      },
+    });
+
+    // Col A (No): Center
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: section.startDataRowIndex,
+          endRowIndex: section.endDataRowIndex,
+          startColumnIndex: 0,
+          endColumnIndex: 1,
+        },
+        cell: {
+          userEnteredFormat: { horizontalAlignment: "CENTER" },
+        },
+        fields: "userEnteredFormat(horizontalAlignment)",
+      },
+    });
+
+    // Col B (Menu): Left
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: section.startDataRowIndex,
+          endRowIndex: section.endDataRowIndex,
+          startColumnIndex: 1,
+          endColumnIndex: 2,
+        },
+        cell: {
+          userEnteredFormat: { horizontalAlignment: "LEFT" },
+        },
+        fields: "userEnteredFormat(horizontalAlignment)",
+      },
+    });
+
+    // Col C (Uraian Bahan): Left
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: section.startDataRowIndex,
+          endRowIndex: section.endDataRowIndex,
+          startColumnIndex: 2,
+          endColumnIndex: 3,
+        },
+        cell: {
+          userEnteredFormat: { horizontalAlignment: "LEFT" },
+        },
+        fields: "userEnteredFormat(horizontalAlignment)",
+      },
+    });
+
+    // Col D (Banyaknya): Center
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: section.startDataRowIndex,
+          endRowIndex: section.endDataRowIndex,
+          startColumnIndex: 3,
+          endColumnIndex: 4,
+        },
+        cell: {
+          userEnteredFormat: { horizontalAlignment: "CENTER" },
+        },
+        fields: "userEnteredFormat(horizontalAlignment)",
+      },
+    });
+
+    // Col E (Keterangan): Left
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: section.startDataRowIndex,
+          endRowIndex: section.endDataRowIndex,
+          startColumnIndex: 4,
+          endColumnIndex: 5,
+        },
+        cell: {
+          userEnteredFormat: { horizontalAlignment: "LEFT" },
+        },
+        fields: "userEnteredFormat(horizontalAlignment)",
+      },
+    });
+
+    // Full Solid Borders for Header + Data Rows of this day
+    requests.push({
+      updateBorders: {
+        range: {
+          sheetId,
+          startRowIndex: section.headerRowIndex,
+          endRowIndex: section.endDataRowIndex,
+          startColumnIndex: 0,
+          endColumnIndex: 5,
+        },
+        top: { style: "SOLID", color: BLACK },
+        bottom: { style: "SOLID", color: BLACK },
+        left: { style: "SOLID", color: BLACK },
+        right: { style: "SOLID", color: BLACK },
+        innerHorizontal: { style: "SOLID", color: BLACK },
+        innerVertical: { style: "SOLID", color: BLACK },
+      },
+    });
+  }
+
+  // C. Set Column Widths (matching screenshot proportions)
+  const columnWidths = [50, 190, 260, 140, 260];
+  columnWidths.forEach((width, colIdx) => {
     requests.push({
       updateDimensionProperties: {
         range: {
           sheetId,
           dimension: "COLUMNS",
-          startIndex: colIndex,
-          endIndex: colIndex + 1,
+          startIndex: colIdx,
+          endIndex: colIdx + 1,
         },
-        properties: {
-          pixelSize: width,
-        },
+        properties: { pixelSize: width },
         fields: "pixelSize",
       },
     });
   });
 
-  // Execute batchUpdate formatting
+  // Execute batchUpdate
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: newFileId,
     requestBody: { requests },
   });
 
-  // Retrieve file URL from Drive
+  // Get file webViewLink
   const fileDetail = await drive.files.get({
     fileId: newFileId,
     fields: "id, name, webViewLink",
@@ -625,8 +738,11 @@ export async function exportFormattedRabReport(
   return {
     success: true,
     spreadsheetId: newFileId,
-    spreadsheetUrl: fileDetail.data.webViewLink || `https://docs.google.com/spreadsheets/d/${newFileId}/edit`,
-    title: reportTitle,
+    spreadsheetUrl:
+      fileDetail.data.webViewLink ||
+      `https://docs.google.com/spreadsheets/d/${newFileId}/edit`,
+    title: spreadsheetTitle,
     rowCount: records.length,
+    datesCount: uniqueDates.length,
   };
 }

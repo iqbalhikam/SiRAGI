@@ -18,12 +18,12 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { tanggal } = body;
+    const { tanggal, mode = "single", startDate, endDate } = body;
     let spreadsheetId = body.spreadsheetId;
 
-    if (!tanggal) {
+    if (mode === "single" && !tanggal) {
       return NextResponse.json(
-        { error: "Parameter tanggal wajib diisi untuk generate laporan." },
+        { error: "Parameter tanggal wajib diisi untuk generate laporan tanggal tunggal." },
         { status: 400 }
       );
     }
@@ -36,7 +36,12 @@ export async function POST(request: Request) {
     const result = await exportFormattedRabReport(
       session.accessToken,
       spreadsheetId,
-      tanggal.trim()
+      {
+        targetDate: tanggal?.trim(),
+        mode,
+        startDate: startDate?.trim(),
+        endDate: endDate?.trim(),
+      }
     );
 
     return NextResponse.json({
@@ -45,12 +50,13 @@ export async function POST(request: Request) {
       spreadsheetUrl: result.spreadsheetUrl,
       title: result.title,
       rowCount: result.rowCount,
-      message: `Laporan berhasil dibuat di Google Drive Anda dengan ${result.rowCount} item bahan.`,
+      datesCount: result.datesCount,
+      message: `Laporan Food Cost berhasil dibuat di Google Drive Anda (${result.rowCount} item bahan dari ${result.datesCount} hari).`,
     });
   } catch (error: any) {
     console.error("POST /api/rab/export error:", error);
     return NextResponse.json(
-      { error: error?.message || "Gagal membuat spreadsheet Laporan RAB di Google Drive." },
+      { error: error?.message || "Gagal membuat spreadsheet Laporan Food Cost di Google Drive." },
       { status: 500 }
     );
   }
