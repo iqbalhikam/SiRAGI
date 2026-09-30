@@ -5,7 +5,6 @@ import { BahanInput, MenuInput } from "@/types/rab";
 import { MenuItemCard } from "./menu-item-card";
 import { AiMenuDialog } from "./ai-menu-dialog";
 import {
-  Calendar,
   Building2,
   Plus,
   Send,
@@ -13,10 +12,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
-  RefreshCw,
-  FolderSync,
-  Wand2,
-  Bot,
 } from "lucide-react";
 
 interface RabFormProps {
@@ -32,8 +27,9 @@ const createInitialBahan = (): BahanInput => ({
   keterangan: "",
 });
 
-const createInitialMenu = (nama = ""): MenuInput => ({
+const createInitialMenu = (nama = "", tgl = ""): MenuInput => ({
   id: `m-${Math.random().toString(36).substring(2, 9)}`,
+  tanggal: tgl || new Date().toISOString().split("T")[0],
   namaMenu: nama,
   bahanList: [createInitialBahan()],
 });
@@ -41,10 +37,9 @@ const createInitialMenu = (nama = ""): MenuInput => ({
 export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
   const todayStr = new Date().toISOString().split("T")[0];
 
-  const [tanggal, setTanggal] = useState<string>(todayStr);
-  const [lokasiSppg, setLokasiSppg] = useState<string>("SPPG Unit Pusat");
+  const [lokasiSppg, setLokasiSppg] = useState<string>("SPPG KALIANYAR KERTOSONO NGANJUK");
   const [menuList, setMenuList] = useState<MenuInput[]>([
-    createInitialMenu("Menu Pagi - Nasi & Lauk Sehat"),
+    createInitialMenu("Menu Pagi - Nasi & Lauk Sehat", todayStr),
   ]);
 
   const [submitting, setSubmitting] = useState(false);
@@ -56,17 +51,22 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
 
   // Populate form with AI generated menu
   const handlePopulateFromAi = (aiMenus: MenuInput[]) => {
-    setMenuList(aiMenus);
-    const totalBahanCount = aiMenus.reduce((sum, m) => sum + m.bahanList.length, 0);
+    // Ensure all AI menus have date populated
+    const enrichedMenus = aiMenus.map((m) => ({
+      ...m,
+      tanggal: m.tanggal || todayStr,
+    }));
+    setMenuList(enrichedMenus);
+    const totalBahanCount = enrichedMenus.reduce((sum, m) => sum + m.bahanList.length, 0);
     setFeedback({
       type: "success",
-      message: `✨ Asisten AI berhasil merancang ${aiMenus.length} menu dengan total ${totalBahanCount} bahan makanan! Formulir terisi otomatis, silakan sesuaikan sebelum disimpan.`,
+      message: `✨ Asisten AI berhasil merancang ${enrichedMenus.length} menu dengan total ${totalBahanCount} bahan makanan! Formulir terisi otomatis, silakan sesuaikan sebelum disimpan.`,
     });
   };
 
   // Add new Menu block
   const handleAddMenu = () => {
-    setMenuList((prev) => [...prev, createInitialMenu()]);
+    setMenuList((prev) => [...prev, createInitialMenu("", todayStr)]);
   };
 
   // Delete Menu block
@@ -80,6 +80,15 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
     setMenuList((prev) => {
       const next = [...prev];
       next[menuIndex] = { ...next[menuIndex], namaMenu: name };
+      return next;
+    });
+  };
+
+  // Update Menu Tanggal (Per-menu date)
+  const handleUpdateMenuTanggal = (menuIndex: number, newTanggal: string) => {
+    setMenuList((prev) => {
+      const next = [...prev];
+      next[menuIndex] = { ...next[menuIndex], tanggal: newTanggal };
       return next;
     });
   };
@@ -129,11 +138,11 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
 
   // Preset example for immediate testing
   const handleLoadSample = () => {
-    setTanggal(todayStr);
     setLokasiSppg("SPPG RSUD Graha Husada");
     setMenuList([
       {
         id: `m-1`,
+        tanggal: todayStr,
         namaMenu: "Sayur Sop Daging & Wortel",
         bahanList: [
           {
@@ -168,6 +177,7 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
       },
       {
         id: `m-2`,
+        tanggal: todayStr,
         namaMenu: "Ayam Panggang Bumbu Rujak",
         bahanList: [
           {
@@ -195,6 +205,7 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
       },
       {
         id: `m-3`,
+        tanggal: todayStr,
         namaMenu: "Pencuci Mulut & Buah Potong",
         bahanList: [
           {
@@ -222,10 +233,19 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
     setFeedback(null);
 
     // Validation
-    if (!tanggal || !lokasiSppg.trim()) {
+    if (!lokasiSppg.trim()) {
       setFeedback({
         type: "error",
-        message: "Tanggal dan Lokasi SPPG wajib diisi.",
+        message: "Lokasi / SPPG wajib diisi.",
+      });
+      return;
+    }
+
+    const missingDateMenu = menuList.find((m) => !m.tanggal?.trim());
+    if (missingDateMenu) {
+      setFeedback({
+        type: "error",
+        message: "Tanggal pelaksanaan pada setiap menu wajib diisi.",
       });
       return;
     }
@@ -250,7 +270,6 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           spreadsheetId,
-          tanggal,
           lokasiSppg,
           menuList,
         }),
@@ -270,7 +289,8 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
       });
 
       if (onSuccessSubmit) {
-        onSuccessSubmit(tanggal);
+        const firstMenuDate = menuList[0]?.tanggal || todayStr;
+        onSuccessSubmit(firstMenuDate);
       }
     } catch (err: any) {
       setFeedback({
@@ -298,51 +318,34 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
               Header Input RAB Harian
             </h2>
             <p className="text-xs text-slate-500">
-              Tentukan tanggal pelaksanaan dan unit penyedia makanan (SPPG).
+              Tentukan unit penyedia makanan (SPPG). Tanggal pelaksanaan diatur pada setiap menu di bawah.
             </p>
           </div>
 
           <button
             type="button"
             onClick={handleLoadSample}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-emerald-700 transition"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-emerald-700 transition cursor-pointer"
           >
             <Sparkles className="h-3.5 w-3.5 text-amber-500" />
             Muat Contoh Menu Gizi
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {/* Tanggal */}
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mb-1.5">
-              <Calendar className="h-3.5 w-3.5 text-emerald-600" />
-              Tanggal Pelaksanaan
-            </label>
-            <input
-              type="date"
-              value={tanggal}
-              onChange={(e) => setTanggal(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-800 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              required
-            />
-          </div>
-
+        <div>
           {/* Lokasi / SPPG */}
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mb-1.5">
-              <Building2 className="h-3.5 w-3.5 text-emerald-600" />
-              Lokasi / SPPG (Satuan Pelayanan Pengadaan Gizi)
-            </label>
-            <input
-              type="text"
-              value={lokasiSppg}
-              onChange={(e) => setLokasiSppg(e.target.value)}
-              placeholder="Contoh: SPPG Dapur Utama RSUD, Katering Mitra..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-800 placeholder-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              required
-            />
-          </div>
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mb-1.5">
+            <Building2 className="h-3.5 w-3.5 text-emerald-600" />
+            Lokasi / SPPG (Satuan Pelayanan Pengadaan Gizi)
+          </label>
+          <input
+            type="text"
+            value={lokasiSppg}
+            onChange={(e) => setLokasiSppg(e.target.value)}
+            placeholder="Contoh: SPPG Dapur Utama RSUD, Katering Mitra..."
+            className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-800 placeholder-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            required
+          />
         </div>
       </div>
 
@@ -354,7 +357,7 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
               Rincian Menu & Bahan Makanan
             </h3>
             <p className="text-xs text-slate-500">
-              Kelompokkan bahan berdasarkan nama menu. Bahan akan otomatis masuk ke{" "}
+              Kelompokkan bahan berdasarkan nama menu dan tentukan tanggal pelaksanaan per menu. Bahan akan otomatis masuk ke{" "}
               <code className="text-emerald-700 font-semibold bg-emerald-50 px-1 py-0.5 rounded">
                 Tab_Input_Harian
               </code>
@@ -393,6 +396,7 @@ export function RabForm({ spreadsheetId, onSuccessSubmit }: RabFormProps) {
               menuIndex={mIdx}
               canDeleteMenu={menuList.length > 1}
               onUpdateMenuName={(name) => handleUpdateMenuName(mIdx, name)}
+              onUpdateTanggal={(newTgl) => handleUpdateMenuTanggal(mIdx, newTgl)}
               onDeleteMenu={() => handleDeleteMenu(mIdx)}
               onAddBahan={() => handleAddBahan(mIdx)}
               onUpdateBahan={(bIdx, updated) =>

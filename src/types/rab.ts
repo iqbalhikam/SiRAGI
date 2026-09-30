@@ -19,12 +19,13 @@ export interface BahanInput {
 
 export interface MenuInput {
   id: string;
+  tanggal?: string; // YYYY-MM-DD per menu
   namaMenu: string;
   bahanList: BahanInput[];
 }
 
 export interface RabFormData {
-  tanggal: string; // YYYY-MM-DD
+  tanggal?: string; // Optional global fallback
   lokasiSppg: string;
   menuList: MenuInput[];
 }

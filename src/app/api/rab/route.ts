@@ -63,9 +63,9 @@ export async function POST(request: Request) {
     const { tanggal, lokasiSppg, menuList } = body;
     let spreadsheetId = body.spreadsheetId;
 
-    if (!tanggal || !lokasiSppg || !Array.isArray(menuList) || menuList.length === 0) {
+    if (!lokasiSppg || !Array.isArray(menuList) || menuList.length === 0) {
       return NextResponse.json(
-        { error: "Data input tidak lengkap. Tanggal, Lokasi, dan minimal 1 Menu dengan Bahan wajib diisi." },
+        { error: "Data input tidak lengkap. Lokasi dan minimal 1 Menu dengan Bahan wajib diisi." },
         { status: 400 }
       );
     }
@@ -80,9 +80,11 @@ export async function POST(request: Request) {
     const rowsToAppend: SheetRowRecord[] = [];
     const timestamp = Date.now();
     let counter = 1;
+    const defaultToday = new Date().toISOString().split("T")[0];
 
     for (const menu of menuList) {
       const menuName = (menu.namaMenu || "Menu Tanpa Nama").trim();
+      const menuTanggal = (menu.tanggal || tanggal || defaultToday).trim();
       if (!Array.isArray(menu.bahanList) || menu.bahanList.length === 0) continue;
 
       for (const bahan of menu.bahanList) {
@@ -90,7 +92,7 @@ export async function POST(request: Request) {
 
         rowsToAppend.push({
           id: `RAB-${timestamp}-${counter++}`,
-          tanggal: tanggal.trim(),
+          tanggal: menuTanggal,
           lokasiSppg: lokasiSppg.trim(),
           namaMenu: menuName,
           uraianBahan: bahan.uraianBahan.trim(),
