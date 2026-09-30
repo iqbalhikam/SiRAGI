@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 
 export default function Home() {
-  const { data: session, status, update } = useSession();
+  const { data: session, status } = useSession();
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(null);
   const [spreadsheetUrl, setSpreadsheetUrl] = useState<string | null>(null);
   const [provisioning, setProvisioning] = useState<boolean>(false);
@@ -30,9 +30,13 @@ export default function Home() {
     new Date().toISOString().split("T")[0]
   );
 
+  const hasProvisionedRef = React.useRef(false);
+  const isProvisioningRef = React.useRef(false);
+
   // Auto-provision or verify Master_DB_RAB_Gizi on login
   const checkOrProvisionDb = async () => {
-    if (status !== "authenticated") return;
+    if (status !== "authenticated" || isProvisioningRef.current) return;
+    isProvisioningRef.current = true;
     setProvisioning(true);
     setProvisionError(null);
 
@@ -46,19 +50,19 @@ export default function Home() {
 
       setSpreadsheetId(data.spreadsheetId);
       setSpreadsheetUrl(data.spreadsheetUrl);
-
-      // Update NextAuth session with the discovered spreadsheetId
-      await update({ spreadsheetId: data.spreadsheetId });
     } catch (err: any) {
       console.error("Provisioning error:", err);
       setProvisionError(err?.message || "Koneksi Google API gagal.");
+      hasProvisionedRef.current = false; // Izinkan retry manual jika gagal
     } finally {
       setProvisioning(false);
+      isProvisioningRef.current = false;
     }
   };
 
   useEffect(() => {
-    if (status === "authenticated") {
+    if (status === "authenticated" && !hasProvisionedRef.current) {
+      hasProvisionedRef.current = true;
       checkOrProvisionDb();
     }
   }, [status]);
