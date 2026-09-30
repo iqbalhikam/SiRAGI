@@ -67,8 +67,13 @@ NEXTAUTH_SECRET=rahasia_acak_minimal_32_karakter
 ```
 
 > **Catatan Pengaturan Google Cloud Console**:
-> - Aktifkan **Google Sheets API** dan **Google Drive API**.
-> - Tambahkan Authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
+> 1. Aktifkan **Google Drive API** dan **Google Sheets API** di menu **APIs & Services > Library**. (Krusial: API harus di-enable terlebih dahulu agar scope di bawah dikenali).
+> 2. Di menu **OAuth consent screen > Scopes > Add or remove scopes**, masukkan URL lengkap (bukan singkatan):
+>    - `https://www.googleapis.com/auth/drive.file`
+>    - `https://www.googleapis.com/auth/spreadsheets`
+> 3. Di menu **Credentials > Create Credentials > OAuth client ID** (Web application):
+>    - Authorized JavaScript origins: `http://localhost:3000`
+>    - Authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
 
 ### 3. Menjalankan Server Pengembangan
 
