@@ -149,21 +149,21 @@ export function AiMenuDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl rounded-2xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-slate-900 p-6 sm:p-7 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto transition-colors">
         {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-slate-100">
+        <div className="flex items-start justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 text-white shadow-md shadow-indigo-500/25">
               <Sparkles className="h-6 w-6 animate-pulse" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 Asisten AI Perancang Menu Gizi
-                <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-700">
+                <span className="rounded-full bg-purple-100 dark:bg-purple-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300">
                   Gemini API
                 </span>
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Ketik kebutuhan menu & target gizi, AI akan menyusun daftar menu dan rincian bahan secara instan.
               </p>
             </div>
@@ -172,7 +172,7 @@ export function AiMenuDialog({
           <button
             onClick={onClose}
             disabled={loading}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300 transition cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
@@ -182,7 +182,7 @@ export function AiMenuDialog({
         <div className="mt-5 space-y-5">
           {/* Prompt Input */}
           <div>
-            <label className="block text-xs font-bold text-slate-800 mb-1.5">
+            <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1.5">
               Instruksi / Prompt Perancangan Menu
             </label>
             <textarea
@@ -196,13 +196,13 @@ export function AiMenuDialog({
                 }
               }}
               placeholder="Contoh: Buatkan RAB menu gizi balita tinggi protein untuk 1 hari (3 kali makan + 1 snack sehat)..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 p-3.5 text-sm text-slate-800 placeholder-slate-400 focus:border-purple-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-purple-500"
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/60 p-3.5 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:border-purple-500 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-purple-500 transition-colors"
               required
             />
 
             {/* Presets Chips */}
             <div className="mt-2.5">
-              <span className="text-[11px] font-semibold text-slate-400 block mb-1.5">
+              <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 block mb-1.5">
                 Rekomendasi Cepat:
               </span>
               <div className="flex flex-wrap gap-1.5">
@@ -211,7 +211,7 @@ export function AiMenuDialog({
                     key={idx}
                     type="button"
                     onClick={() => setPrompt(preset)}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-purple-300 hover:bg-purple-50/60 hover:text-purple-700 transition text-left"
+                    className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:border-purple-300 dark:hover:border-purple-700 hover:bg-purple-50/60 dark:hover:bg-purple-950/40 hover:text-purple-700 dark:hover:text-purple-300 transition text-left cursor-pointer"
                   >
                     {preset.length > 45 ? preset.substring(0, 45) + "..." : preset}
                   </button>
@@ -221,17 +221,17 @@ export function AiMenuDialog({
           </div>
 
           {/* Model Selector */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                <Cpu className="h-4 w-4 text-purple-600" />
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                <Cpu className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                 Pilih Model Gemini
               </label>
 
               <button
                 type="button"
                 onClick={() => setUseCustomModel(!useCustomModel)}
-                className="text-[11px] font-medium text-purple-600 hover:underline"
+                className="text-[11px] font-medium text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
               >
                 {useCustomModel ? "Pilih dari daftar" : "Ketik model kustom"}
               </button>
@@ -244,8 +244,8 @@ export function AiMenuDialog({
                     key={m.id}
                     className={`relative flex cursor-pointer flex-col rounded-lg border p-3 text-left transition ${
                       selectedModel === m.id
-                        ? "border-purple-500 bg-white ring-2 ring-purple-500/20"
-                        : "border-slate-200 bg-white hover:border-slate-300"
+                        ? "border-purple-500 bg-white ring-2 ring-purple-500/20 dark:border-purple-500 dark:bg-purple-950/20"
+                        : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
                     }`}
                   >
                     <input
@@ -257,20 +257,20 @@ export function AiMenuDialog({
                       className="sr-only"
                     />
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-800">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
                         {m.name}
                       </span>
                       <span
                         className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
                           selectedModel === m.id
-                            ? "bg-purple-100 text-purple-700"
-                            : "bg-slate-100 text-slate-500"
+                            ? "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300"
+                            : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
                         }`}
                       >
                         {m.tag}
                       </span>
                     </div>
-                    <span className="text-[11px] text-slate-500 mt-1 line-clamp-1">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">
                       {m.desc}
                     </span>
                   </label>
@@ -283,23 +283,23 @@ export function AiMenuDialog({
                   value={customModel}
                   onChange={(e) => setCustomModel(e.target.value)}
                   placeholder="Misal: gemini-2.5-flash-thinking, gemini-1.5-pro-latest"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 placeholder-slate-400 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
                 />
               </div>
             )}
           </div>
 
           {/* Optional Gemini API Key Section */}
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-3.5">
+          <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-3.5">
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-                <KeyRound className="h-3.5 w-3.5 text-slate-500" />
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <KeyRound className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
                 Gemini API Key (Opsional)
               </span>
               <button
                 type="button"
                 onClick={() => setShowApiKeyInput(!showApiKeyInput)}
-                className="text-[11px] font-semibold text-slate-600 hover:text-purple-600"
+                className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 cursor-pointer"
               >
                 {showApiKeyInput ? "Sembunyikan" : "Input API Key Mandiri"}
               </button>
@@ -312,10 +312,10 @@ export function AiMenuDialog({
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="AIzaSy..."
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-800 font-mono placeholder-slate-400 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-100 font-mono placeholder-slate-400 dark:placeholder-slate-500 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
                 />
-                <p className="text-[10px] text-slate-500">
-                  Kosongkan jika Anda sudah menyetel <code className="bg-slate-200 px-1 rounded">GEMINI_API_KEY</code> di berkas <code className="bg-slate-200 px-1 rounded">.env.local</code>.
+                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                  Kosongkan jika Anda sudah menyetel <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">GEMINI_API_KEY</code> di berkas <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">.env.local</code>.
                 </p>
               </div>
             )}
@@ -323,8 +323,8 @@ export function AiMenuDialog({
 
           {/* Error Notice */}
           {error && (
-            <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-700">
-              <AlertCircle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+            <div className="flex items-start gap-2.5 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 p-3.5 text-xs text-red-700 dark:text-red-300">
+              <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400 mt-0.5" />
               <div>
                 <p className="font-semibold">Gagal Merancang Menu</p>
                 <p className="mt-0.5">{error}</p>
@@ -333,12 +333,12 @@ export function AiMenuDialog({
           )}
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+              className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
             >
               Batal
             </button>

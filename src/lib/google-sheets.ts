@@ -4,6 +4,7 @@ import {
   formatFullHariTanggal,
   formatTanggalUpper,
   formatIndoNumber,
+  normalizeDateToYMD,
 } from "@/lib/utils";
 
 const MASTER_DB_NAME = "Master_DB_RAB_Gizi";
@@ -219,7 +220,7 @@ export async function appendDailyRabEntries(
 
   const values = records.map((r) => [
     r.id,
-    r.tanggal,
+    normalizeDateToYMD(r.tanggal),
     r.lokasiSppg,
     r.namaMenu,
     r.uraianBahan,
@@ -254,6 +255,8 @@ export async function getDailyRabEntries(
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `'${TAB_INPUT_HARIAN}'!A2:H`,
+    valueRenderOption: "FORMATTED_VALUE",
+    dateTimeRenderOption: "FORMATTED_STRING",
   });
 
   const rows = res.data.values || [];
@@ -261,7 +264,7 @@ export async function getDailyRabEntries(
     .filter((row) => row && row.length >= 5)
     .map((row) => ({
       id: row[0] || "",
-      tanggal: row[1] || "",
+      tanggal: normalizeDateToYMD(row[1] || ""),
       lokasiSppg: row[2] || "",
       namaMenu: row[3] || "",
       uraianBahan: row[4] || "",
@@ -271,7 +274,8 @@ export async function getDailyRabEntries(
     }));
 
   if (filterDate) {
-    return records.filter((r) => r.tanggal === filterDate);
+    const target = normalizeDateToYMD(filterDate);
+    return records.filter((r) => r.tanggal === target);
   }
 
   return records;
@@ -315,13 +319,15 @@ export async function exportFormattedRabReport(
   if (options.mode === "all") {
     records = await getDailyRabEntries(accessToken, masterSpreadsheetId);
   } else if (options.mode === "range" && options.startDate && options.endDate) {
+    const start = normalizeDateToYMD(options.startDate);
+    const end = normalizeDateToYMD(options.endDate);
     const all = await getDailyRabEntries(accessToken, masterSpreadsheetId);
-    records = all.filter(
-      (r) => r.tanggal >= options.startDate! && r.tanggal <= options.endDate!
-    );
+    records = all.filter((r) => r.tanggal >= start && r.tanggal <= end);
   } else {
     // Single date mode
-    const dateToFetch = options.targetDate || new Date().toISOString().split("T")[0];
+    const dateToFetch = normalizeDateToYMD(
+      options.targetDate || new Date().toISOString().split("T")[0]
+    );
     records = await getDailyRabEntries(accessToken, masterSpreadsheetId, dateToFetch);
   }
 
@@ -761,10 +767,12 @@ export async function getGroupedRabHistory(
   let filtered = allRecords;
 
   if (filter?.startDate) {
-    filtered = filtered.filter((r) => r.tanggal >= filter.startDate!);
+    const start = normalizeDateToYMD(filter.startDate);
+    filtered = filtered.filter((r) => r.tanggal >= start);
   }
   if (filter?.endDate) {
-    filtered = filtered.filter((r) => r.tanggal <= filter.endDate!);
+    const end = normalizeDateToYMD(filter.endDate);
+    filtered = filtered.filter((r) => r.tanggal <= end);
   }
   if (filter?.keyword && filter.keyword.trim()) {
     const kw = filter.keyword.toLowerCase().trim();
