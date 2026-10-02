@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
 import Link from "next/link";
-import { Navbar } from "@/components/layout/navbar";
 import { RabDetailSheet } from "@/components/history/rab-detail-sheet";
 import { RabHistoryDocument } from "@/types/rab";
 import {
@@ -102,11 +101,6 @@ export default function HistoryPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 transition-colors">
-      <Navbar
-        spreadsheetUrl={spreadsheetUrl}
-        isDbReady={Boolean(spreadsheetId)}
-      />
-
       <main className="flex-1 pb-16">
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
           {/* Breadcrumb & Navigation Tabs */}

@@ -1,0 +1,139 @@
+// prisma/schema.prisma
+// Database: Supabase PostgreSQL (koneksi via DATABASE_URL di .env.local)
+// Jalankan: npx prisma db push   → buat/sinkronkan tabel ke Supabase
+// Jalankan: npx prisma generate  → regenerate Prisma Client
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Supabase mewajibkan direct connection (port 5432) untuk prisma db push / migrate
+  // Gunakan connection pooler (port 6543) untuk runtime production di Vercel/serverless
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────
+// Tabel Master Bahan Pangan TKPI
+// ─────────────────────────────────────────────
+model MasterBahanTkpi {
+  id                    String   @id @default(uuid())
+  kode_tkpi             String   @unique
+  nama_bahan            String
+  kategori              String?
+  bdd_persen            Float    @default(100)
+  harga_estimasi_per_kg Float    @default(0)
+  image_url             String?
+
+  // Nilai gizi per 100g berat bersih
+  energi_kcal           Float    @default(0)
+  protein_g             Float    @default(0)
+  lemak_g               Float    @default(0)
+  karbo_g               Float    @default(0)
+  serat_g               Float    @default(0)
+  besi_fe_mg            Float    @default(0)
+  kalsium_ca_mg         Float    @default(0)
+  zink_zn_mg            Float    @default(0)
+  vit_a_mcg             Float    @default(0)
+  vit_c_mg              Float    @default(0)
+
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  // Relasi
+  komposisi             ResepKomposisi[]
+
+  @@map("master_bahan_tkpi")
+}
+
+// ─────────────────────────────────────────────
+// Tabel Resep (Header)
+// ─────────────────────────────────────────────
+model Resep {
+  id            String   @id @default(uuid())
+  nama_resep    String
+  kategori      String   @default("Lainnya")
+  deskripsi     String?
+  porsi         Int      @default(1)
+
+  // Ringkasan nutrisi (dihitung dari komposisi)
+  total_kalori  Float    @default(0)
+  total_protein Float    @default(0)
+  total_lemak   Float    @default(0)
+  total_karbo   Float    @default(0)
+  total_hpp     Int      @default(0)
+  hpp_per_porsi Int      @default(0)
+
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relasi
+  komposisi     ResepKomposisi[]
+
+  @@map("resep")
+}
+
+// ─────────────────────────────────────────────
+// Tabel Komposisi Bahan per Resep
+// ─────────────────────────────────────────────
+model ResepKomposisi {
+  id            String   @id @default(uuid())
+  resep_id      String
+  bahan_tkpi_id String?
+
+  // Denormalisasi untuk mudah query tanpa join berat
+  nama_bahan    String   @default("")
+  gramasi_kotor Float    @default(0)
+
+  bdd_persen    Float    @default(100)
+  berat_bersih  Float    @default(0)
+  kalori        Float    @default(0)
+  protein       Float    @default(0)
+  lemak         Float    @default(0)
+  karbo         Float    @default(0)
+  harga         Int      @default(0)
+
+  created_at    DateTime @default(now())
+
+  // Relasi
+  resep         Resep            @relation(fields: [resep_id], references: [id], onDelete: Cascade)
+  bahan_tkpi    MasterBahanTkpi? @relation(fields: [bahan_tkpi_id], references: [id], onDelete: SetNull)
+
+  @@map("resep_komposisi")
+}
+
+// ─────────────────────────────────────────────
+// Tabel Menu Planner Mingguan (MBG)
+// ─────────────────────────────────────────────
+model MenuPlannerWeek {
+  id                 String   @id @default(uuid())
+  user_id            String?
+
+  plan_name          String   @default("Rencana Menu MBG")
+  target_akg_id      String
+  target_akg_nama    String
+  target_kalori_mbg  Int
+  target_protein_mbg Float
+  batas_hpp_maksimal Int
+
+  // Validasi mingguan
+  is_valid           Boolean  @default(false)
+  valid_days_count   Int      @default(0)
+  warning_days_count Int      @default(0)
+
+  // Ringkasan rata-rata mingguan
+  avg_kalori         Int      @default(0)
+  avg_hpp            Int      @default(0)
+  avg_protein        Float    @default(0)
+  total_hpp_week     Int      @default(0)
+
+  // Jadwal harian (JSON: { senin: [...], selasa: [...], ... })
+  schedule_data      Json     @default("{}")
+
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  @@map("menu_planner_week")
+}

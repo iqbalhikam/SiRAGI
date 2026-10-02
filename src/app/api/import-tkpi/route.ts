@@ -1,5 +1,10 @@
+/**
+ * app/api/import-tkpi/route.ts
+ * Menggunakan Prisma ORM — menggantikan Supabase client
+ */
+
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseServerClient, isSupabaseConfigured } from "@/utils/supabase/client";
+import { prisma } from "@/lib/prisma";
 import { MasterBahanTKPI } from "@/types/tkpi";
 
 function parseNum(val: unknown, fallback: number = 0): number {
@@ -22,18 +27,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!isSupabaseConfigured()) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Koneksi Supabase belum dikonfigurasi di environment. Pastikan NEXT_PUBLIC_SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY / NEXT_PUBLIC_SUPABASE_ANON_KEY sudah disetel.",
-        },
-        { status: 503 }
-      );
-    }
-
-    // 1. Validasi & Sanitasi Data
+    // Validasi & Sanitasi Data
     const validRecords: MasterBahanTKPI[] = [];
     const invalidRows: { index: number; reason: string }[] = [];
 
@@ -46,10 +40,7 @@ export async function POST(req: NextRequest) {
       ).trim();
 
       if (!kode || !nama) {
-        invalidRows.push({
-          index: idx + 1,
-          reason: "Kode/ID dan Nama Bahan wajib diisi",
-        });
+        invalidRows.push({ index: idx + 1, reason: "Kode/ID dan Nama Bahan wajib diisi" });
         return;
       }
 
@@ -58,88 +49,97 @@ export async function POST(req: NextRequest) {
       validRecords.push({
         kode_tkpi: kode,
         nama_bahan: nama,
-        kategori: item.kategori ? String(item.kategori).trim() : (item.category ? String(item.category).trim() : null),
+        kategori: item.kategori
+          ? String(item.kategori).trim()
+          : item.category
+          ? String(item.category).trim()
+          : null,
         bdd_persen: parseNum(item.bdd_persen ?? item.bdd ?? item.BDD, 100),
         harga_estimasi_per_kg: parseNum(
           item.harga_estimasi_per_kg ?? item.harga_per_kg ?? item.harga ?? item.price ?? item.Harga,
           0
         ),
         energi_kcal: parseNum(
-          item.energi_kcal ?? item.energi ?? item.kalori ?? item.calories ?? item.calorie ?? item.Energi ?? item.Calories,
+          item.energi_kcal ?? item.energi ?? item.kalori ?? item.calories ?? item.calorie ?? item.Energi,
           0
         ),
-        protein_g: parseNum(
-          item.protein_g ?? item.protein ?? item.proteins ?? item.Protein ?? item.Proteins,
-          0
-        ),
-        lemak_g: parseNum(
-          item.lemak_g ?? item.lemak ?? item.fat ?? item.fats ?? item.Lemak ?? item.Fat,
-          0
-        ),
-        karbo_g: parseNum(
-          item.karbo_g ?? item.karbo ?? item.karbohidrat ?? item.carbohydr ?? item.carbohydrate ?? item.carbohydrates ?? item.carbs ?? item.Karbo,
-          0
-        ),
-        serat_g: parseNum(item.serat_g ?? item.serat ?? item.fiber ?? item.fibers ?? item.Serat, 0),
-        besi_fe_mg: parseNum(item.besi_fe_mg ?? item.besi ?? item.fe ?? item.iron ?? item.Fe, 0),
-        kalsium_ca_mg: parseNum(item.kalsium_ca_mg ?? item.kalsium ?? item.ca ?? item.calcium ?? item.Ca, 0),
-        zink_zn_mg: parseNum(item.zink_zn_mg ?? item.zink ?? item.zn ?? item.zinc ?? item.Zn, 0),
-        vit_a_mcg: parseNum(item.vit_a_mcg ?? item.vit_a ?? item.vitamin_a ?? item.VitA, 0),
-        vit_c_mg: parseNum(item.vit_c_mg ?? item.vit_c ?? item.vitamin_c ?? item.VitC, 0),
+        protein_g: parseNum(item.protein_g ?? item.protein ?? item.Protein, 0),
+        lemak_g: parseNum(item.lemak_g ?? item.lemak ?? item.fat ?? item.Lemak, 0),
+        karbo_g: parseNum(item.karbo_g ?? item.karbo ?? item.karbohidrat ?? item.carbohydrate ?? item.carbs, 0),
+        serat_g: parseNum(item.serat_g ?? item.serat ?? item.fiber, 0),
+        besi_fe_mg: parseNum(item.besi_fe_mg ?? item.besi ?? item.fe ?? item.iron, 0),
+        kalsium_ca_mg: parseNum(item.kalsium_ca_mg ?? item.kalsium ?? item.calcium, 0),
+        zink_zn_mg: parseNum(item.zink_zn_mg ?? item.zink ?? item.zinc, 0),
+        vit_a_mcg: parseNum(item.vit_a_mcg ?? item.vit_a ?? item.vitamin_a, 0),
+        vit_c_mg: parseNum(item.vit_c_mg ?? item.vit_c ?? item.vitamin_c, 0),
         image_url: imageUrl ? String(imageUrl).trim() : null,
       });
     });
 
     if (validRecords.length === 0) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Tidak ada data valid yang dapat diimpor.",
-          invalidRows,
-        },
+        { success: false, message: "Tidak ada data valid yang dapat diimpor.", invalidRows },
         { status: 422 }
       );
     }
 
-    // 2. Batching / Chunking Insert (misal per 200 baris agar aman dan cepat)
-    const supabase = getSupabaseServerClient();
+    // Upsert menggunakan Prisma — batch per 250 agar tidak timeout
     const CHUNK_SIZE = 250;
     let totalProcessed = 0;
     const upsertErrors: string[] = [];
 
     for (let i = 0; i < validRecords.length; i += CHUNK_SIZE) {
       const chunk = validRecords.slice(i, i + CHUNK_SIZE);
-
-      const { data, error } = await supabase
-        .from("master_bahan_tkpi")
-        .upsert(chunk, {
-          onConflict: "kode_tkpi",
-          ignoreDuplicates: false, // Update data jika kode_tkpi sudah ada
-        })
-        .select("kode_tkpi");
-
-      if (error) {
-        console.error("Supabase upsert error chunk:", error);
-        upsertErrors.push(`Batch ${i / CHUNK_SIZE + 1}: ${error.message}`);
-      } else {
-        totalProcessed += (data?.length || chunk.length);
+      try {
+        // Prisma tidak support bulk upsert langsung, gunakan createManyAndReturn dengan skipDuplicates
+        // atau upsert per record dalam transaction
+        const result = await prisma.$transaction(
+          chunk.map((record) =>
+            prisma.masterBahanTkpi.upsert({
+              where: { kode_tkpi: record.kode_tkpi },
+              create: {
+                kode_tkpi: record.kode_tkpi,
+                nama_bahan: record.nama_bahan,
+                kategori: record.kategori ?? null,
+                bdd_persen: record.bdd_persen,
+                harga_estimasi_per_kg: record.harga_estimasi_per_kg,
+                energi_kcal: record.energi_kcal,
+                protein_g: record.protein_g,
+                lemak_g: record.lemak_g,
+                karbo_g: record.karbo_g,
+                serat_g: record.serat_g,
+                besi_fe_mg: record.besi_fe_mg,
+                kalsium_ca_mg: record.kalsium_ca_mg,
+                zink_zn_mg: record.zink_zn_mg,
+                vit_a_mcg: record.vit_a_mcg,
+                vit_c_mg: record.vit_c_mg,
+                image_url: record.image_url ?? null,
+              },
+              update: {
+                nama_bahan: record.nama_bahan,
+                kategori: record.kategori ?? null,
+                bdd_persen: record.bdd_persen,
+                harga_estimasi_per_kg: record.harga_estimasi_per_kg,
+                energi_kcal: record.energi_kcal,
+                protein_g: record.protein_g,
+                lemak_g: record.lemak_g,
+                karbo_g: record.karbo_g,
+                serat_g: record.serat_g,
+                besi_fe_mg: record.besi_fe_mg,
+                kalsium_ca_mg: record.kalsium_ca_mg,
+                zink_zn_mg: record.zink_zn_mg,
+                vit_a_mcg: record.vit_a_mcg,
+                vit_c_mg: record.vit_c_mg,
+                image_url: record.image_url ?? null,
+              },
+            })
+          )
+        );
+        totalProcessed += result.length;
+      } catch (batchErr: any) {
+        console.error(`Batch ${Math.floor(i / CHUNK_SIZE) + 1} error:`, batchErr);
+        upsertErrors.push(`Batch ${Math.floor(i / CHUNK_SIZE) + 1}: ${batchErr.message}`);
       }
-    }
-
-    if (upsertErrors.length > 0 && totalProcessed === 0) {
-      const isTableMissing = upsertErrors.some((e) =>
-        e.includes("Could not find the table") || e.includes("relation \"public.master_bahan_tkpi\" does not exist")
-      );
-      return NextResponse.json(
-        {
-          success: false,
-          message: isTableMissing
-            ? "Tabel 'master_bahan_tkpi' belum dibuat di database Supabase Anda. Silakan eksekusi file migrasi SQL di Supabase SQL Editor (supabase/migrations/20261001_create_master_bahan_tkpi.sql)."
-            : "Gagal menyimpan data ke Supabase.",
-          errors: upsertErrors,
-        },
-        { status: 500 }
-      );
     }
 
     return NextResponse.json({
@@ -153,81 +153,53 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("Error in /api/import-tkpi:", error);
     return NextResponse.json(
-      {
-        success: false,
-        message: error?.message || "Terjadi kesalahan internal saat mengimpor data.",
-      },
+      { success: false, message: error?.message || "Terjadi kesalahan internal saat mengimpor data." },
       { status: 500 }
     );
   }
 }
 
-// Endpoint GET untuk mengambil data master_bahan_tkpi dari Supabase
 export async function GET(req: NextRequest) {
   try {
-    if (!isSupabaseConfigured()) {
-      return NextResponse.json(
-        {
-          success: false,
-          isConfigured: false,
-          message: "Supabase belum terkonfigurasi.",
-          data: [],
-          total: 0,
-        },
-        { status: 200 }
-      );
-    }
-
     const { searchParams } = new URL(req.url);
     const search = searchParams.get("search") || "";
     const kategori = searchParams.get("kategori") || "";
     const limit = parseInt(searchParams.get("limit") || "100", 10);
     const offset = parseInt(searchParams.get("offset") || "0", 10);
 
-    const supabase = getSupabaseServerClient();
-    let query = supabase
-      .from("master_bahan_tkpi")
-      .select("*", { count: "exact" })
-      .order("nama_bahan", { ascending: true })
-      .range(offset, offset + limit - 1);
+    const where: any = {};
 
     if (search) {
-      query = query.or(`nama_bahan.ilike.%${search}%,kode_tkpi.ilike.%${search}%`);
+      where.OR = [
+        { nama_bahan: { contains: search, mode: "insensitive" } },
+        { kode_tkpi: { contains: search, mode: "insensitive" } },
+      ];
     }
 
     if (kategori && kategori !== "all") {
-      query = query.eq("kategori", kategori);
+      where.kategori = kategori;
     }
 
-    const { data, count, error } = await query;
-
-    if (error) {
-      console.error("Error fetching master_bahan_tkpi:", error);
-      const isTableMissing = error.message?.includes("Could not find the table") || error.code === "42P01";
-      return NextResponse.json(
-        {
-          success: false,
-          isConfigured: true,
-          isTableCreated: !isTableMissing,
-          message: isTableMissing
-            ? "Tabel 'master_bahan_tkpi' belum dibuat di Supabase. Silakan jalankan file migrasi SQL yang telah disediakan."
-            : error.message,
-          data: [],
-          total: 0,
-        },
-        { status: 200 }
-      );
-    }
+    const [data, total] = await prisma.$transaction([
+      prisma.masterBahanTkpi.findMany({
+        where,
+        orderBy: { nama_bahan: "asc" },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.masterBahanTkpi.count({ where }),
+    ]);
 
     return NextResponse.json({
       success: true,
       isConfigured: true,
-      data: data || [],
-      total: count || 0,
+      data,
+      total,
     });
   } catch (error: any) {
+    console.error("Error fetching master_bahan_tkpi:", error);
     return NextResponse.json(
-      { success: false, message: error?.message || "Gagal mengambil data.", data: [], total: 0 },
+      { success: false, isConfigured: true, message: error?.message || "Gagal mengambil data.", data: [], total: 0 },
       { status: 500 }
     );
   }

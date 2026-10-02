@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import {
   ChefHat,
@@ -19,11 +19,12 @@ import {
   Flame,
   PieChart,
   RefreshCw,
-  Zap,
+  ShoppingCart,
+  FolderOpen,
+  Copy,
+  SlidersHorizontal,
 } from "lucide-react";
 import { TKPICombobox } from "@/components/recipe/tkpi-combobox";
-import { BatchCalculatorPopover } from "@/components/recipe/batch-calculator-popover";
-import { BatchConversionResult } from "@/types/recipe";
 import { MasterBahanTKPI } from "@/types/tkpi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/utils/supabase/client";
+import { SATUAN_LIST, getGramPerUnit } from "@/lib/satuan-converter";
+import { SavedRecipesModal } from "@/components/recipe/saved-recipes-modal";
 
 // Interface untuk baris komposisi dinamis
 export interface ResepRowItem {
@@ -84,8 +87,34 @@ export default function RecipeBuilderPage() {
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // 4. State helper text konversi batch per baris (keyed by rowId)
-  const [batchHelperTexts, setBatchHelperTexts] = useState<Record<string, string>>({});
+  // 4. State input jumlah bahan dibeli, satuan, custom gram & potong per unit (keyed by rowId)
+  const [jumlahBahanInputs, setJumlahBahanInputs] = useState<Record<string, string>>({});
+  const [satuanInputs, setSatuanInputs] = useState<Record<string, string>>({});
+  const [customGramInputs, setCustomGramInputs] = useState<Record<string, number>>({});
+  const [potongPerUnitInputs, setPotongPerUnitInputs] = useState<Record<string, number>>({});
+  const [showCustomGramInputs, setShowCustomGramInputs] = useState<Record<string, boolean>>({});
+
+  // 5. State Edit Resep yang Sudah Dibuat
+  const [editingResepId, setEditingResepId] = useState<string | null>(null);
+  const [isLoadModalOpen, setIsLoadModalOpen] = useState(false);
+
+  // Auto-load resep dari URL parameter (?id=...) jika ada
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const idFromUrl = urlParams.get("id");
+      if (idFromUrl) {
+        fetch(`/api/resep/${idFromUrl}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.success && data.resep) {
+              handleSelectRecipeFromModal(data.resep);
+            }
+          })
+          .catch((err) => console.error("Error auto-loading recipe:", err));
+      }
+    }
+  }, []);
 
   // Helper kalkulasi per baris:
   // Berat Bersih (g) = gramasi_kotor * (bdd_persen / 100)
@@ -131,17 +160,59 @@ export default function RecipeBuilderPage() {
     setRows((prev) => {
       const next = [...prev];
       const currentRow = next[index];
-      const calcs = calculateRowValues(bahan, currentRow.gramasi_kotor);
+
+      // Cerdas tentukan satuan default berdasarkan nama bahan
+      const n = (bahan.nama_bahan || "").toLowerCase();
+      let suggestedSatuan = satuanInputs[currentRow.rowId] || "kg";
+      let suggestedGram = 1000;
+      let suggestedPotong = 1;
+
+      if (n.includes("tahu")) {
+        suggestedSatuan = "kotak";
+        suggestedGram = 50; // default tahu ~50g per potong (1 porsi)
+        suggestedPotong = 6; // default 6 potong per kotak
+      } else if (n.includes("garam")) {
+        suggestedSatuan = "pcs";
+        suggestedGram = 2.5; // default garam ~2.5g per porsi
+        suggestedPotong = 100; // 1 pcs (250g) = 100 porsi
+      } else if (n.includes("telur")) {
+        suggestedSatuan = "butir";
+        suggestedGram = 60; // default telur ~60g/butir
+        suggestedPotong = 1;
+      }
+
+      setSatuanInputs((s) => ({ ...s, [currentRow.rowId]: suggestedSatuan }));
+      setCustomGramInputs((c) => ({ ...c, [currentRow.rowId]: suggestedGram }));
+      setPotongPerUnitInputs((p) => ({ ...p, [currentRow.rowId]: suggestedPotong }));
+
+      const isGrosir = SATUAN_LIST.find((s) => s.value === suggestedSatuan)?.isDiscrete;
+
+      // Nilai Gramasi Kotor (Gram/Porsi) HARUS selalu menunjukkan berat PER 1 PORSI
+      let targetGramasi: number | "" = currentRow.gramasi_kotor;
+      if (isGrosir) {
+        targetGramasi = suggestedGram;
+      } else {
+        const currentJumlah = jumlahBahanInputs[currentRow.rowId];
+        if (currentJumlah && parseFloat(currentJumlah) > 0) {
+          const totalGram = parseFloat(currentJumlah) * suggestedGram;
+          const safePorsi = Math.max(1, porsi || 1);
+          targetGramasi = Math.round((totalGram / safePorsi) * 100) / 100;
+        }
+      }
+
+      const calcs = calculateRowValues(bahan, targetGramasi);
       next[index] = {
         ...currentRow,
         bahan,
+        gramasi_kotor: targetGramasi,
         ...calcs,
       };
+
       return next;
     });
   };
 
-  // Handler: Update Gramasi Kotor pada Baris Tertentu (manual input — hapus batch helper)
+  // Handler: Update Gramasi Kotor pada Baris Tertentu
   const handleGramasiChange = (index: number, rowId: string, val: string) => {
     const numericVal = val === "" ? "" : Math.max(0, parseFloat(val) || 0);
     setRows((prev) => {
@@ -155,32 +226,83 @@ export default function RecipeBuilderPage() {
       };
       return next;
     });
-    // Hapus batch helper text saat user mengedit manual
-    setBatchHelperTexts((prev) => {
-      const copy = { ...prev };
-      delete copy[rowId];
-      return copy;
-    });
   };
 
-  // Handler: Terapkan hasil batch calculator ke gramasi baris tertentu
-  const handleBatchApply = (rowId: string, rowIndex: number, result: BatchConversionResult) => {
-    setRows((prev) => {
-      const next = [...prev];
-      const currentRow = next[rowIndex];
-      const calcs = calculateRowValues(currentRow.bahan, result.gramasi_kotor);
-      next[rowIndex] = {
-        ...currentRow,
-        gramasi_kotor: result.gramasi_kotor,
-        ...calcs,
-      };
-      return next;
-    });
-    // Tampilkan label konversi di bawah input gramasi baris ini
-    setBatchHelperTexts((prev) => ({
-      ...prev,
-      [rowId]: `💡 Konversi Otomatis: ${result.label}`,
-    }));
+  // Handler: Hitung gramasi dari jumlah bahan dibeli
+  // Jika grosir (kotak, pcs, dll): Gramasi kotor tetap gram_per_pcs per porsi (misal 50g), BUKAN total belanja!
+  const handleJumlahBahanChange = (
+    rowId: string,
+    rowIndex: number,
+    val: string,
+    satuan: string,
+    customGramVal?: number,
+    customPotongVal?: number
+  ) => {
+    setJumlahBahanInputs((prev) => ({ ...prev, [rowId]: val }));
+    const num = parseFloat(val);
+    const currentBahan = rows[rowIndex]?.bahan;
+    const isGrosir = SATUAN_LIST.find((s) => s.value === satuan)?.isDiscrete;
+
+    if (isGrosir) {
+      // Nilai Gramasi Kotor (Gram/Porsi) HARUS selalu menunjukkan berat PER 1 PORSI (default 50g untuk tahu)
+      const gramPerPcs =
+        customGramVal ??
+        customGramInputs[rowId] ??
+        getGramPerUnit(satuan, currentBahan?.nama_bahan);
+
+      setRows((prev) => {
+        const next = [...prev];
+        const currentRow = next[rowIndex];
+        const calcs = calculateRowValues(currentRow.bahan, gramPerPcs);
+        next[rowIndex] = {
+          ...currentRow,
+          gramasi_kotor: gramPerPcs,
+          ...calcs,
+        };
+        return next;
+      });
+    } else {
+      // Satuan massa standar (kg, gram, liter, ml)
+      if (!val || isNaN(num) || num <= 0) return;
+      const gramPerUnit = getGramPerUnit(satuan, currentBahan?.nama_bahan);
+      const totalGram = num * gramPerUnit;
+      const safePorsi = Math.max(1, porsi || 1);
+      const gramasiPerPorsi = totalGram / safePorsi;
+
+      setRows((prev) => {
+        const next = [...prev];
+        const currentRow = next[rowIndex];
+        const calcs = calculateRowValues(currentRow.bahan, gramasiPerPorsi);
+        next[rowIndex] = {
+          ...currentRow,
+          gramasi_kotor: Math.round(gramasiPerPorsi * 100) / 100,
+          ...calcs,
+        };
+        return next;
+      });
+    }
+  };
+
+  const handleSatuanChange = (rowId: string, rowIndex: number, newSatuan: string) => {
+    setSatuanInputs((prev) => ({ ...prev, [rowId]: newSatuan }));
+    const currentBahan = rows[rowIndex]?.bahan;
+    const isGrosir = SATUAN_LIST.find((s) => s.value === newSatuan)?.isDiscrete;
+
+    let defaultGram = getGramPerUnit(newSatuan, currentBahan?.nama_bahan);
+    let defaultPotong = newSatuan === "kotak" ? 6 : 1;
+
+    setCustomGramInputs((prev) => ({ ...prev, [rowId]: defaultGram }));
+    setPotongPerUnitInputs((prev) => ({ ...prev, [rowId]: defaultPotong }));
+
+    const currentJumlah = jumlahBahanInputs[rowId];
+    handleJumlahBahanChange(rowId, rowIndex, currentJumlah || "", newSatuan, defaultGram, defaultPotong);
+  };
+
+  const handleCustomGramChange = (rowId: string, rowIndex: number, newGram: number) => {
+    setCustomGramInputs((prev) => ({ ...prev, [rowId]: newGram }));
+    const currentJumlah = jumlahBahanInputs[rowId];
+    const currentSatuan = satuanInputs[rowId] ?? "kg";
+    handleJumlahBahanChange(rowId, rowIndex, currentJumlah || "", currentSatuan, newGram);
   };
 
   // Handler: Tambah Baris Baru
@@ -264,6 +386,7 @@ export default function RecipeBuilderPage() {
 
   // Handler: Reset Form Resep
   const handleResetForm = () => {
+    setEditingResepId(null);
     setNamaResep("");
     setKategori("Lauk Hewani");
     setPorsi(1);
@@ -281,12 +404,63 @@ export default function RecipeBuilderPage() {
         biaya: 0,
       },
     ]);
+    setJumlahBahanInputs({});
+    setSatuanInputs({});
+    setCustomGramInputs({});
+    setPotongPerUnitInputs({});
+    setShowCustomGramInputs({});
     setSaveSuccess(null);
     setSaveError(null);
   };
 
-  // Handler: Simpan Resep (Insert ke resep lalu bulk insert ke resep_komposisi)
-  const handleSaveResep = async () => {
+  // Handler: Muat resep yang dipilih dari Modal
+  const handleSelectRecipeFromModal = (recipe: any) => {
+    setEditingResepId(recipe.id);
+    setNamaResep(recipe.nama_resep || "");
+    setKategori(recipe.kategori || "Lainnya");
+    setPorsi(recipe.porsi || 1);
+    setDeskripsi(recipe.deskripsi || "");
+
+    if (Array.isArray(recipe.komposisi) && recipe.komposisi.length > 0) {
+      const loadedRows: ResepRowItem[] = recipe.komposisi.map((k: any, idx: number) => {
+        const bahan: MasterBahanTKPI = k.bahan_tkpi || {
+          id: k.bahan_tkpi_id,
+          kode_tkpi: k.bahan_tkpi_id || `TKPI-${idx + 1}`,
+          nama_bahan: k.nama_bahan,
+          bdd_persen: k.bdd_persen ?? 100,
+          harga_estimasi_per_kg: k.gramasi_kotor > 0 ? (k.harga / k.gramasi_kotor) * 1000 : 0,
+          energi_kcal: k.berat_bersih > 0 ? (k.kalori / k.berat_bersih) * 100 : 0,
+          protein_g: k.berat_bersih > 0 ? (k.protein / k.berat_bersih) * 100 : 0,
+          lemak_g: k.berat_bersih > 0 ? (k.lemak / k.berat_bersih) * 100 : 0,
+          karbo_g: k.berat_bersih > 0 ? (k.karbo / k.berat_bersih) * 100 : 0,
+        };
+
+        return {
+          rowId: "row-" + Date.now() + "-" + idx,
+          bahan,
+          gramasi_kotor: k.gramasi_kotor,
+          berat_bersih: k.berat_bersih,
+          kalori: k.kalori,
+          protein: k.protein,
+          lemak: k.lemak,
+          karbo: k.karbo,
+          biaya: k.harga,
+        };
+      });
+
+      setRows(loadedRows);
+    }
+
+    setSaveSuccess(`Resep "${recipe.nama_resep}" berhasil dimuat ke editor.`);
+    setSaveError(null);
+  };
+
+  const handleCreateNewRecipe = () => {
+    handleResetForm();
+  };
+
+  // Handler: Simpan / Update Resep
+  const handleSaveResep = async (mode: "save" | "duplicate" = "save") => {
     setSaveError(null);
     setSaveSuccess(null);
 
@@ -307,12 +481,12 @@ export default function RecipeBuilderPage() {
 
     try {
       setIsSaving(true);
-
       const safePorsi = Math.max(1, porsi || 1);
 
-      // Gunakan API Route /api/resep (yang otomatis mem-bypass RLS menggunakan Service Role / Anon client server-side)
+      const targetNama = mode === "duplicate" ? `${namaResep.trim()} (Salinan)` : namaResep.trim();
+
       const payload = {
-        nama_resep: namaResep.trim(),
+        nama_resep: targetNama,
         kategori: kategori,
         deskripsi: deskripsi.trim() || null,
         porsi: safePorsi,
@@ -325,7 +499,7 @@ export default function RecipeBuilderPage() {
         komposisi: validRows.map((r) => ({
           bahan_tkpi_id: r.bahan?.id || null,
           bahan_id: r.bahan?.kode_tkpi || r.bahan?.id || null,
-          nama_bahan: r.bahan?.nama_bahan,
+          nama_bahan: r.bahan?.nama_bahan || "Bahan Makanan",
           gramasi_kotor: Number(r.gramasi_kotor),
           bdd_persen: Number(r.bahan?.bdd_persen || 100),
           berat_bersih: Number(r.berat_bersih.toFixed(2)),
@@ -337,8 +511,12 @@ export default function RecipeBuilderPage() {
         })),
       };
 
-      const res = await fetch("/api/resep", {
-        method: "POST",
+      const isUpdating = editingResepId && mode === "save";
+      const endpoint = isUpdating ? `/api/resep/${editingResepId}` : "/api/resep";
+      const method = isUpdating ? "PUT" : "POST";
+
+      const res = await fetch(endpoint, {
+        method,
         headers: {
           "Content-Type": "application/json",
         },
@@ -351,9 +529,22 @@ export default function RecipeBuilderPage() {
         throw new Error(result.error || "Gagal menyimpan resep ke Supabase.");
       }
 
-      setSaveSuccess(
-        `Resep "${namaResep}" beserta ${validRows.length} komposisi bahan berhasil disimpan ke tabel Supabase!`
-      );
+      if (isUpdating) {
+        setSaveSuccess(`Resep "${payload.nama_resep}" berhasil diperbarui!`);
+      } else {
+        if (mode === "duplicate") {
+          setNamaResep(payload.nama_resep);
+          setEditingResepId(result.resep?.id || null);
+          setSaveSuccess(
+            `Resep "${payload.nama_resep}" berhasil diduplikasi dan disimpan sebagai resep baru!`
+          );
+        } else {
+          setEditingResepId(result.resep?.id || null);
+          setSaveSuccess(
+            `Resep "${namaResep}" beserta ${validRows.length} komposisi bahan berhasil disimpan ke tabel Supabase!`
+          );
+        }
+      }
     } catch (err: any) {
       console.error("Gagal menyimpan resep:", err);
       setSaveError(err.message || "Terjadi kesalahan saat menyimpan resep.");
@@ -363,9 +554,10 @@ export default function RecipeBuilderPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
-      <div className="mx-auto max-w-7xl space-y-6">
-        {/* Top Header Card */}
+    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 flex flex-col text-slate-900 dark:text-slate-100 transition-colors">
+      <main className="p-4 sm:p-6 lg:p-8 flex-1">
+        <div className="mx-auto max-w-7xl space-y-6">
+          {/* Top Header Card */}
         <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800/80 dark:bg-slate-900 transition-colors">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1.5">
@@ -395,7 +587,16 @@ export default function RecipeBuilderPage() {
             </div>
 
             {/* Quick Links */}
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Button
+                onClick={() => setIsLoadModalOpen(true)}
+                size="sm"
+                className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 shadow-sm"
+              >
+                <FolderOpen className="h-4 w-4" />
+                <span>Buka Resep Tersimpan</span>
+              </Button>
+
               <Link href="/master-data">
                 <Button
                   variant="outline"
@@ -406,6 +607,7 @@ export default function RecipeBuilderPage() {
                   <span>Master TKPI</span>
                 </Button>
               </Link>
+
               <Button
                 variant="outline"
                 size="sm"
@@ -418,6 +620,40 @@ export default function RecipeBuilderPage() {
             </div>
           </div>
         </div>
+
+        {/* Mode Update Resep Banner */}
+        {editingResepId && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/80 p-4 text-xs text-indigo-900 shadow-sm dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-200">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shrink-0 shadow-sm">
+                <ChefHat className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm text-slate-900 dark:text-white">
+                    Mode Edit: {namaResep}
+                  </span>
+                  <Badge className="bg-indigo-600 text-white text-[10px] py-0">
+                    Resep Sudah Dibuat
+                  </Badge>
+                </div>
+                <p className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-0.5">
+                  Klik <strong>Perbarui Resep</strong> untuk memperbarui data ini di database, atau simpan sebagai salinan baru.
+                </p>
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCreateNewRecipe}
+              className="gap-1.5 shrink-0 border-indigo-300 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:text-indigo-300"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Buat Resep Baru</span>
+            </Button>
+          </div>
+        )}
 
         {/* Notifikasi Alert */}
         {saveSuccess && (
@@ -559,9 +795,9 @@ export default function RecipeBuilderPage() {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-12 items-end">
-                      {/* Autocomplete Input TKPI */}
-                      <div className="sm:col-span-8 space-y-1">
+                    <div className="space-y-3">
+                      {/* Baris 1: Autocomplete TKPI */}
+                      <div className="space-y-1">
                         <Label className="text-xs text-slate-500 dark:text-slate-400">
                           Pencarian Bahan (Autocomplete TKPI)
                         </Label>
@@ -572,16 +808,15 @@ export default function RecipeBuilderPage() {
                         />
                       </div>
 
-                      {/* Gramasi Kotor Input + Batch Calculator */}
-                      <div className="sm:col-span-4 space-y-1">
-                        <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
-                          <span>Gramasi Kotor</span>
-                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                            (Gram)
-                          </span>
-                        </Label>
-                        <div className="flex gap-1.5 items-center">
-                          <div className="relative flex-1">
+                      {/* Baris 2: Gramasi Kotor + Jumlah Bahan Dibeli */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                        {/* Gramasi Kotor */}
+                        <div className="space-y-1">
+                          <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                            <span>Gramasi Kotor</span>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">(Gram/Porsi)</span>
+                          </Label>
+                          <div className="relative">
                             <Input
                               type="number"
                               min={0}
@@ -595,21 +830,179 @@ export default function RecipeBuilderPage() {
                               g
                             </span>
                           </div>
-                          {/* Batch Calculator Popover */}
-                          <BatchCalculatorPopover
-                            namaBahan={row.bahan ? row.bahan.nama_bahan : "Bahan"}
-                            onApply={(result) => handleBatchApply(row.rowId, index, result)}
-                          />
                         </div>
-                        {/* Text Helper Konversi Batch */}
-                        {batchHelperTexts[row.rowId] && (
-                          <div className="flex items-start gap-1 rounded-md bg-violet-50 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-900/50 px-2 py-1.5 mt-1">
-                            <Zap className="h-3 w-3 text-violet-500 shrink-0 mt-0.5" />
-                            <p className="text-[10px] text-violet-700 dark:text-violet-300 font-medium leading-snug">
-                              {batchHelperTexts[row.rowId]}
-                            </p>
+
+                        {/* Jumlah Bahan Dibeli */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                              <ShoppingCart className="h-3 w-3 text-violet-500" />
+                              Jumlah Bahan Dibeli
+                            </Label>
+
+                            {/* Tombol setting bobot jika satuan kemasan / grosir */}
+                            {SATUAN_LIST.find((s) => s.value === (satuanInputs[row.rowId] ?? "kg"))?.isDiscrete && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setShowCustomGramInputs((prev) => ({
+                                    ...prev,
+                                    [row.rowId]: !prev[row.rowId],
+                                  }))
+                                }
+                                className="text-[10px] text-violet-600 dark:text-violet-400 hover:underline flex items-center gap-0.5"
+                                title="Sesuaikan potong dan gram per porsi"
+                              >
+                                <SlidersHorizontal className="h-2.5 w-2.5" />
+                                <span>
+                                  {potongPerUnitInputs[row.rowId] ?? (satuanInputs[row.rowId] === "kotak" ? 6 : 1)} ptg/{(satuanInputs[row.rowId] ?? "kotak")} • {customGramInputs[row.rowId] ?? getGramPerUnit(satuanInputs[row.rowId] ?? "kotak", row.bahan?.nama_bahan)}g/ptg
+                                </span>
+                              </button>
+                            )}
                           </div>
-                        )}
+
+                          <div className="flex gap-2">
+                            <Input
+                              type="number"
+                              min={0}
+                              step="any"
+                              placeholder={`Contoh: ${(satuanInputs[row.rowId] ?? "kg") === "kotak" ? "323" : (satuanInputs[row.rowId] ?? "kg") === "pcs" ? "5" : "10"}`}
+                              value={jumlahBahanInputs[row.rowId] ?? ""}
+                              onChange={(e) =>
+                                handleJumlahBahanChange(
+                                  row.rowId,
+                                  index,
+                                  e.target.value,
+                                  satuanInputs[row.rowId] ?? "kg"
+                                )
+                              }
+                              className="h-10 font-semibold flex-1 min-w-0"
+                            />
+                            <select
+                              value={satuanInputs[row.rowId] ?? "kg"}
+                              onChange={(e) => handleSatuanChange(row.rowId, index, e.target.value)}
+                              className="h-10 w-28 shrink-0 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 text-xs font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-violet-500 cursor-pointer"
+                            >
+                              {SATUAN_LIST.map((opt) => (
+                                <option key={opt.value} value={opt.value} className="dark:bg-slate-900">
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Input Setting Grosir: Potong per Unit & Gram per Potong */}
+                          {SATUAN_LIST.find((s) => s.value === (satuanInputs[row.rowId] ?? "kg"))?.isDiscrete && (
+                            <div className="mt-1.5 flex flex-wrap items-center gap-3 rounded-lg bg-violet-50/70 p-2 text-xs border border-violet-200 dark:border-violet-800 dark:bg-violet-950/40">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] text-violet-700 dark:text-violet-300 font-medium">
+                                  Potong per {satuanInputs[row.rowId] ?? "kotak"}:
+                                </span>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={potongPerUnitInputs[row.rowId] ?? (satuanInputs[row.rowId] === "kotak" ? 6 : 1)}
+                                  onChange={(e) => {
+                                    const pVal = Math.max(1, parseInt(e.target.value) || 1);
+                                    setPotongPerUnitInputs((prev) => ({ ...prev, [row.rowId]: pVal }));
+                                    handleJumlahBahanChange(
+                                      row.rowId,
+                                      index,
+                                      jumlahBahanInputs[row.rowId] ?? "",
+                                      satuanInputs[row.rowId] ?? "kotak",
+                                      customGramInputs[row.rowId],
+                                      pVal
+                                    );
+                                  }}
+                                  className="h-6.5 w-16 text-xs px-1 text-center font-bold"
+                                />
+                                <span className="text-[10px] text-slate-500">potong</span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] text-violet-700 dark:text-violet-300 font-medium">
+                                  Berat 1 potong:
+                                </span>
+                                <Input
+                                  type="number"
+                                  min="0.1"
+                                  step="any"
+                                  value={
+                                    customGramInputs[row.rowId] ??
+                                    getGramPerUnit(
+                                      satuanInputs[row.rowId] ?? "kotak",
+                                      row.bahan?.nama_bahan
+                                    )
+                                  }
+                                  onChange={(e) => {
+                                    const gVal = Math.max(0.1, parseFloat(e.target.value) || 1);
+                                    setCustomGramInputs((prev) => ({ ...prev, [row.rowId]: gVal }));
+                                    handleJumlahBahanChange(
+                                      row.rowId,
+                                      index,
+                                      jumlahBahanInputs[row.rowId] ?? "",
+                                      satuanInputs[row.rowId] ?? "kotak",
+                                      gVal,
+                                      potongPerUnitInputs[row.rowId]
+                                    );
+                                  }}
+                                  className="h-6.5 w-16 text-xs px-1 text-center font-bold"
+                                />
+                                <span className="text-[10px] text-slate-500">gram</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Info Helper Preview sesuai rumus user */}
+                          {jumlahBahanInputs[row.rowId] && parseFloat(jumlahBahanInputs[row.rowId]) > 0 && (
+                            SATUAN_LIST.find((s) => s.value === (satuanInputs[row.rowId] ?? "kg"))?.isDiscrete ? (
+                              (() => {
+                                const jumlah = parseFloat(jumlahBahanInputs[row.rowId]);
+                                const potongPerUnit =
+                                  potongPerUnitInputs[row.rowId] ??
+                                  (satuanInputs[row.rowId] === "kotak" ? 6 : 1);
+                                const gramPerPcs =
+                                  customGramInputs[row.rowId] ??
+                                  getGramPerUnit(satuanInputs[row.rowId] ?? "kotak", row.bahan?.nama_bahan);
+                                const totalPorsi = jumlah * potongPerUnit;
+                                const totalKg = (totalPorsi * gramPerPcs) / 1000;
+                                const namaBahan = row.bahan?.nama_bahan || "Bahan";
+
+                                return (
+                                  <div className="mt-2 rounded-lg bg-emerald-50/90 p-2 text-xs text-emerald-900 border border-emerald-200/90 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-800">
+                                    <p className="font-semibold text-[11px] leading-relaxed">
+                                      💡 1 Porsi = {gramPerPcs}g (1 potong). Untuk {jumlah} {satuanInputs[row.rowId] ?? "kotak"} ({jumlah} × {potongPerUnit} = {totalPorsi.toLocaleString("id-ID")} porsi), total belanja = {totalKg.toLocaleString("id-ID", { maximumFractionDigits: 2 })} kg {namaBahan}.
+                                    </p>
+                                  </div>
+                                );
+                              })()
+                            ) : (
+                              <p className="text-[10px] text-violet-600 dark:text-violet-400 mt-1">
+                                {jumlahBahanInputs[row.rowId]} {satuanInputs[row.rowId] ?? "kg"} (
+                                {(
+                                  parseFloat(jumlahBahanInputs[row.rowId]) *
+                                  getGramPerUnit(
+                                    satuanInputs[row.rowId] ?? "kg",
+                                    row.bahan?.nama_bahan
+                                  )
+                                ).toLocaleString("id-ID")}
+                                g) ÷ {Math.max(1, porsi)} porsi →{" "}
+                                <strong>
+                                  {(
+                                    (parseFloat(jumlahBahanInputs[row.rowId]) *
+                                      getGramPerUnit(
+                                        satuanInputs[row.rowId] ?? "kg",
+                                        row.bahan?.nama_bahan
+                                      )) /
+                                    Math.max(1, porsi)
+                                  ).toFixed(1)}{" "}
+                                  g/porsi
+                                </strong>
+                              </p>
+                            )
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -792,25 +1185,58 @@ export default function RecipeBuilderPage() {
                 </div>
               </div>
 
-              {/* Tombol Simpan Resep Utama */}
-              <div className="mt-6 space-y-2">
-                <Button
-                  onClick={handleSaveResep}
-                  disabled={isSaving}
-                  className="w-full h-11 gap-2 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 shadow-md shadow-emerald-600/20 text-sm font-bold"
-                >
-                  {isSaving ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span>Menyimpan ke Supabase...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4" />
-                      <span>Simpan Resep ke Supabase</span>
-                    </>
-                  )}
-                </Button>
+              {/* Tombol Simpan / Update Resep */}
+              <div className="mt-6 space-y-2.5">
+                {editingResepId ? (
+                  <>
+                    <Button
+                      onClick={() => handleSaveResep("save")}
+                      disabled={isSaving}
+                      className="w-full h-11 gap-2 bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-700 shadow-md shadow-indigo-600/20 text-sm font-bold"
+                    >
+                      {isSaving ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          <span>Memperbarui ke Supabase...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4" />
+                          <span>Perbarui Resep Ini (Update)</span>
+                        </>
+                      )}
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleSaveResep("duplicate")}
+                      disabled={isSaving}
+                      className="w-full h-10 gap-2 border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      <span>Simpan Sebagai Resep Baru (Duplikat)</span>
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    onClick={() => handleSaveResep("save")}
+                    disabled={isSaving}
+                    className="w-full h-11 gap-2 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 shadow-md shadow-emerald-600/20 text-sm font-bold"
+                  >
+                    {isSaving ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>Menyimpan ke Supabase...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4" />
+                        <span>Simpan Resep ke Supabase</span>
+                      </>
+                    )}
+                  </Button>
+                )}
 
                 <p className="text-center text-[11px] text-slate-400">
                   Data otomatis tersimpan ke tabel <code>resep</code> dan <code>resep_komposisi</code>.
@@ -819,7 +1245,16 @@ export default function RecipeBuilderPage() {
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </main>
+
+      {/* Modal Buka & Pilih Resep Tersimpan */}
+      <SavedRecipesModal
+        isOpen={isLoadModalOpen}
+        onClose={() => setIsLoadModalOpen(false)}
+        onSelectRecipe={handleSelectRecipeFromModal}
+        currentRecipeId={editingResepId}
+      />
     </div>
   );
 }

@@ -16,6 +16,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  Plus,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import {
   Table,
@@ -29,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { MasterBahanTKPI } from "@/types/tkpi";
+import { TkpiFormModal } from "@/components/master-data/tkpi-form-modal";
 
 export default function MasterDataPage() {
   const [items, setItems] = useState<MasterBahanTKPI[]>([]);
@@ -54,7 +58,49 @@ export default function MasterDataPage() {
     message: string;
   }>({ type: null, message: "" });
 
+  // Manual Form Modal State (Create / Update)
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [formModalMode, setFormModalMode] = useState<"create" | "edit">("create");
+  const [selectedItemForEdit, setSelectedItemForEdit] = useState<MasterBahanTKPI | null>(null);
+
+  // Delete Action State
+  const [deleteTargetItem, setDeleteTargetItem] = useState<MasterBahanTKPI | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleOpenCreate = () => {
+    setSelectedItemForEdit(null);
+    setFormModalMode("create");
+    setIsFormModalOpen(true);
+  };
+
+  const handleOpenEdit = (item: MasterBahanTKPI) => {
+    setSelectedItemForEdit(item);
+    setFormModalMode("edit");
+    setIsFormModalOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTargetItem?.id) return;
+    try {
+      setIsDeleting(true);
+      const res = await fetch(`/api/import-tkpi/${deleteTargetItem.id}`, {
+        method: "DELETE",
+      });
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.message || "Gagal menghapus bahan.");
+      }
+      setDeleteTargetItem(null);
+      await fetchData();
+    } catch (err: any) {
+      console.error("Delete error:", err);
+      alert(err.message || "Terjadi kesalahan saat menghapus bahan.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Fetch Data from Supabase via API route
   const fetchData = async () => {
@@ -320,9 +366,10 @@ export default function MasterDataPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
-      <div className="mx-auto max-w-7xl space-y-6">
-        {/* Top Header Card */}
+    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 flex flex-col text-slate-900 dark:text-slate-100 transition-colors">
+      <main className="p-4 sm:p-6 lg:p-8 flex-1">
+        <div className="mx-auto max-w-7xl space-y-6">
+          {/* Top Header Card */}
         <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800/80 dark:bg-slate-900 transition-colors">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1.5">
@@ -363,6 +410,31 @@ export default function MasterDataPage() {
             {/* Action Buttons */}
             <div className="flex flex-wrap items-center gap-2.5">
               <Button
+                onClick={handleOpenCreate}
+                size="sm"
+                className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 shadow-sm shadow-emerald-600/20"
+                title="Tambahkan bahan baru secara manual"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Tambah Manual</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setImportStatus({ type: null, message: "" });
+                  setSelectedFile(null);
+                  setParsedPreview([]);
+                  setIsImportModalOpen(true);
+                }}
+                className="gap-2 border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <Upload className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Import CSV</span>
+              </Button>
+
+              <Button
                 variant="outline"
                 size="sm"
                 onClick={handleDownloadTemplate}
@@ -370,21 +442,7 @@ export default function MasterDataPage() {
                 title="Unduh contoh file CSV dengan format kolom yang sesuai"
               >
                 <Download className="h-4 w-4" />
-                <span>Template CSV</span>
-              </Button>
-
-              <Button
-                onClick={() => {
-                  setImportStatus({ type: null, message: "" });
-                  setSelectedFile(null);
-                  setParsedPreview([]);
-                  setIsImportModalOpen(true);
-                }}
-                size="sm"
-                className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 shadow-sm shadow-emerald-600/20"
-              >
-                <Upload className="h-4 w-4" />
-                <span>Import Data TKPI (CSV)</span>
+                <span className="hidden sm:inline">Template CSV</span>
               </Button>
 
               <Button
@@ -482,13 +540,16 @@ export default function MasterDataPage() {
                   <TableHead className="text-right w-[90px]">Zink Zn (mg)</TableHead>
                   <TableHead className="text-right w-[100px]">Vit A (mcg)</TableHead>
                   <TableHead className="text-right w-[90px]">Vit C (mg)</TableHead>
+                  <TableHead className="text-center w-[90px] sticky right-0 bg-slate-50/95 backdrop-blur-xs dark:bg-slate-900/95 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
+                    Aksi
+                  </TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={15} className="h-32 text-center text-slate-500">
+                    <TableCell colSpan={16} className="h-32 text-center text-slate-500">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <RefreshCw className="h-6 w-6 animate-spin text-emerald-600" />
                         <span>Memuat data master TKPI...</span>
@@ -497,7 +558,7 @@ export default function MasterDataPage() {
                   </TableRow>
                 ) : paginatedItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={15} className="h-44 text-center text-slate-500">
+                    <TableCell colSpan={16} className="h-44 text-center text-slate-500">
                       <div className="flex flex-col items-center justify-center gap-2.5 py-6">
                         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
                           <FileSpreadsheet className="h-6 w-6" />
@@ -510,7 +571,7 @@ export default function MasterDataPage() {
                         <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">
                           {search || selectedKategori !== "all"
                             ? "Coba gunakan kata kunci pencarian lain atau pilih kategori Semua."
-                            : "Tabel masih kosong. Silakan gunakan tombol \"Import Data TKPI (CSV)\" di atas untuk menambahkan data bahan ke Supabase."}
+                            : "Tabel masih kosong. Silakan gunakan tombol \"Tambah Manual\" atau \"Import CSV\" di atas untuk menambahkan data bahan ke Supabase."}
                         </p>
                       </div>
                     </TableCell>
@@ -580,6 +641,26 @@ export default function MasterDataPage() {
                       </TableCell>
                       <TableCell className="text-right text-slate-500 dark:text-slate-400">
                         {item.vit_c_mg}
+                      </TableCell>
+                      <TableCell className="text-center sticky right-0 bg-white/95 backdrop-blur-xs dark:bg-slate-900/95 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(item)}
+                            className="rounded-lg p-1.5 text-slate-500 hover:bg-blue-50 hover:text-blue-600 dark:text-slate-400 dark:hover:bg-blue-950/50 dark:hover:text-blue-300 transition"
+                            title={`Edit ${item.nama_bahan}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteTargetItem(item)}
+                            className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:hover:bg-rose-950/50 dark:hover:text-rose-300 transition"
+                            title={`Hapus ${item.nama_bahan}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -769,7 +850,80 @@ export default function MasterDataPage() {
             </div>
           </div>
         )}
-      </div>
+
+        {/* Modal Konfirmasi Hapus */}
+        {deleteTargetItem && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+            <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 transition-all">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Hapus Bahan TKPI?
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Tindakan ini tidak dapat dibatalkan.
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-300 py-2">
+                Apakah Anda yakin ingin menghapus{" "}
+                <strong className="text-slate-900 dark:text-white">
+                  {deleteTargetItem.nama_bahan}
+                </strong>{" "}
+                ({deleteTargetItem.kode_tkpi}) dari Master Data TKPI?
+              </p>
+
+              <div className="mt-5 flex items-center justify-end gap-2.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeleteTargetItem(null)}
+                  disabled={isDeleting}
+                >
+                  Batal
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleDeleteConfirm}
+                  disabled={isDeleting}
+                  className="gap-2 bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-600 dark:hover:bg-rose-700 shadow-sm"
+                >
+                  {isDeleting ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      <span>Menghapus...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Ya, Hapus Bahan</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Form Tambah / Edit TKPI */}
+        <TkpiFormModal
+          isOpen={isFormModalOpen}
+          mode={formModalMode}
+          initialData={selectedItemForEdit}
+          onClose={() => {
+            setIsFormModalOpen(false);
+            setSelectedItemForEdit(null);
+          }}
+          onSuccess={() => {
+            fetchData();
+          }}
+        />
+        </div>
+      </main>
     </div>
   );
 }

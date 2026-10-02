@@ -873,6 +873,7 @@ CREATE POLICY "Allow public insert on master_bahan" ON master_bahan FOR INSERT W
                   key={item.tempId}
                   index={index}
                   item={item}
+                  porsi={porsi}
                   canDelete={komposisi.length > 1}
                   onChange={(updated) => handleUpdateItem(index, updated)}
                   onDelete={() => handleDeleteItem(index)}

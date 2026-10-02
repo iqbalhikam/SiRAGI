@@ -1,15 +1,12 @@
 "use client";
 
 import React from "react";
-import { Navbar } from "@/components/layout/navbar";
 import { POKebutuhanView } from "@/components/po/po-kebutuhan-view";
 import { ShoppingCart, Calculator, Truck } from "lucide-react";
 
 export default function POKebutuhanPage() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col transition-colors">
-      <Navbar />
-
       <main className="mx-auto w-full max-w-[1680px] px-3 py-6 sm:px-6 lg:px-8 flex-1">
         {/* Page Header */}
         <div className="mb-6">

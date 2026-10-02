@@ -16,7 +16,6 @@ import {
   MasterAKG,
   StandardRecipe,
   TARGET_AKG_PRESETS,
-  MOCK_STANDARD_RECIPES,
 } from "@/types/menu-planner";
 import { RecipeSidebar } from "./recipe-sidebar";
 import { DayColumn } from "./day-column";
@@ -43,97 +42,43 @@ const INITIAL_DAYS: DayColumnData[] = [
     id: "senin",
     namaHari: "Senin",
     subTitle: "Hari ke-1",
-    items: [
-      {
-        instanceId: "item-1",
-        recipe: MOCK_STANDARD_RECIPES[0], // Nasi Ayam Bakar Madu (680 kkal, Rp 14.200)
-      },
-      {
-        instanceId: "item-2",
-        recipe: MOCK_STANDARD_RECIPES[9], // Pisang Ambon (105 kkal, Rp 2.000)
-      },
-    ],
+    items: [],
   },
   {
     id: "selasa",
     namaHari: "Selasa",
     subTitle: "Hari ke-2",
-    items: [
-      {
-        instanceId: "item-3",
-        recipe: MOCK_STANDARD_RECIPES[1], // Nasi Rolade Daging Sapi (710 kkal, Rp 14.800)
-      },
-    ],
+    items: [],
   },
   {
     id: "rabu",
     namaHari: "Rabu",
     subTitle: "Hari ke-3",
-    items: [
-      {
-        instanceId: "item-4",
-        recipe: MOCK_STANDARD_RECIPES[2], // Nasi Ikan Kembung (640 kkal, Rp 12.500)
-      },
-      {
-        instanceId: "item-5",
-        recipe: MOCK_STANDARD_RECIPES[6], // Tempe Goreng Tepung (145 kkal, Rp 1.800)
-      },
-    ],
+    items: [],
   },
   {
     id: "kamis",
     namaHari: "Kamis",
     subTitle: "Hari ke-4",
-    items: [
-      {
-        instanceId: "item-6",
-        recipe: MOCK_STANDARD_RECIPES[3], // Nasi Putih Pulen (260 kkal, Rp 2.200)
-      },
-      {
-        instanceId: "item-7",
-        recipe: MOCK_STANDARD_RECIPES[4], // Ayam Goreng Lengkuas (320 kkal, Rp 7.800)
-      },
-      {
-        instanceId: "item-8",
-        recipe: MOCK_STANDARD_RECIPES[7], // Tumis Buncis (85 kkal, Rp 2.400)
-      },
-    ],
+    items: [],
   },
   {
     id: "jumat",
     namaHari: "Jumat",
     subTitle: "Hari ke-5",
-    items: [
-      {
-        instanceId: "item-9",
-        recipe: MOCK_STANDARD_RECIPES[3], // Nasi Putih (260 kkal, Rp 2.200)
-      },
-      {
-        instanceId: "item-10",
-        recipe: MOCK_STANDARD_RECIPES[5], // Semur Telur Tahu (240 kkal, Rp 5.500)
-      },
-      {
-        instanceId: "item-11",
-        recipe: MOCK_STANDARD_RECIPES[8], // Sup Bayam (55 kkal, Rp 1.800)
-      },
-      {
-        instanceId: "item-12",
-        recipe: MOCK_STANDARD_RECIPES[10], // Susu Sapi (90 kkal, Rp 3.500)
-      },
-      {
-        instanceId: "item-13",
-        recipe: MOCK_STANDARD_RECIPES[9], // Pisang (105 kkal, Rp 2.000)
-      },
-    ],
+    items: [],
   },
 ];
 
 export function MenuPlanner() {
   const [days, setDays] = useState<DayColumnData[]>(INITIAL_DAYS);
   const [selectedAkgId, setSelectedAkgId] = useState<string>(TARGET_AKG_PRESETS[0].id);
-  const [recipes, setRecipes] = useState<StandardRecipe[]>(MOCK_STANDARD_RECIPES);
+  const [recipes, setRecipes] = useState<StandardRecipe[]>([]);
   const [loadingRecipes, setLoadingRecipes] = useState<boolean>(false);
   const [activeDragRecipe, setActiveDragRecipe] = useState<StandardRecipe | null>(null);
+  const [savingPlan, setSavingPlan] = useState<boolean>(false);
+  const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | 'info' | null; message: string }>({ type: null, message: '' });
+  const [planId, setPlanId] = useState<string | null>(null);
 
   // Selected Target AKG
   const activeAkg =
@@ -148,40 +93,146 @@ export function MenuPlanner() {
     })
   );
 
-  // Try fetching additional user-created recipes from Supabase `resep` table
-  useEffect(() => {
-    const fetchSupabaseRecipes = async () => {
-      if (!isSupabaseConfigured()) return;
-      try {
-        setLoadingRecipes(true);
-        const { data, error } = await supabase
-          .from("resep")
-          .select("id, nama_resep, kategori, total_kalori, total_protein, hpp_per_porsi, deskripsi")
-          .order("created_at", { ascending: false });
+  // Helper function to show save status
+  const showStatus = (type: 'success' | 'error' | 'info', message: string) => {
+    setSaveStatus({ type, message });
+    setTimeout(() => setSaveStatus({ type: null, message: '' }), 3000);
+  };
 
-        if (!error && data && data.length > 0) {
-          const mapped: StandardRecipe[] = data.map((d: any) => ({
-            id: `sb-${d.id}`,
+  // Load plan terbaru via API route (Prisma)
+  const loadPlanFromApi = async () => {
+    try {
+      showStatus('info', 'Memuat plan dari database...');
+
+      const res = await fetch('/api/menu-planner');
+      const json = await res.json();
+
+      if (!res.ok) throw new Error(json.error || 'Gagal memuat plan');
+
+      if (json.data) {
+        const plan = json.data;
+        const schedule = plan.schedule_data as any;
+        const newDays: DayColumnData[] = INITIAL_DAYS.map(day => ({
+          ...day,
+          items: (schedule[day.id] || []).map((item: any) => ({
+            instanceId: item.instanceId,
+            recipe: item.recipe as StandardRecipe,
+          })),
+        }));
+        setDays(newDays);
+        setSelectedAkgId(plan.target_akg_id);
+        setPlanId(plan.id);
+        showStatus('success', `Plan "${plan.plan_name}" berhasil dimuat`);
+      } else {
+        showStatus('info', 'Belum ada plan tersimpan di database');
+      }
+    } catch (err: any) {
+      console.error('Error loading plan:', err);
+      showStatus('error', 'Gagal memuat plan dari database');
+    }
+  };
+
+  // Simpan plan via API route (Prisma)
+  const savePlanToApi = async () => {
+    try {
+      setSavingPlan(true);
+      showStatus('info', 'Menyimpan plan ke database...');
+
+      const scheduleData: Record<string, any[]> = {};
+      days.forEach(day => {
+        scheduleData[day.id] = day.items.map(item => ({
+          instanceId: item.instanceId,
+          recipe: item.recipe,
+        }));
+      });
+
+      const planData = {
+        id: planId,
+        user_id: null,
+        plan_name: `Plan ${new Date().toLocaleDateString('id-ID')}`,
+        target_akg_id: activeAkg.id,
+        target_akg_nama: activeAkg.namaKelompok,
+        target_kalori_mbg: activeAkg.targetKaloriMbg,
+        target_protein_mbg: activeAkg.targetProteinMbg,
+        batas_hpp_maksimal: activeAkg.batasHppMaksimal,
+        is_valid: weekStats.warningDaysCount === 0,
+        valid_days_count: weekStats.validDaysCount,
+        warning_days_count: weekStats.warningDaysCount,
+        avg_kalori: weekStats.avgKalori,
+        avg_hpp: weekStats.avgHpp,
+        avg_protein: weekStats.avgProtein,
+        total_hpp_week: weekStats.totalHppWeek,
+        schedule_data: scheduleData,
+      };
+
+      const method = planId ? 'PATCH' : 'POST';
+      const res = await fetch('/api/menu-planner', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(planData),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Gagal menyimpan plan');
+
+      if (!planId && json.data?.id) {
+        setPlanId(json.data.id);
+      }
+
+      showStatus('success', 'Plan berhasil disimpan ke database!');
+    } catch (err: any) {
+      console.error('Error saving plan:', err);
+      showStatus('error', 'Gagal menyimpan plan ke database');
+    } finally {
+      setSavingPlan(false);
+    }
+  };
+
+  // Auto-save saat jadwal berubah (debounced 2 detik)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (planId) {
+        savePlanToApi();
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, planId]);
+
+  // Fetch resep dari API route /api/resep (Prisma)
+  useEffect(() => {
+    const fetchRecipes = async () => {
+      setLoadingRecipes(true);
+      try {
+        const res = await fetch('/api/resep');
+        const json = await res.json();
+
+        if (!res.ok) throw new Error(json.error || 'Gagal memuat resep');
+
+        if (json.data && json.data.length > 0) {
+          const mapped: StandardRecipe[] = json.data.map((d: any) => ({
+            id: d.id,
             nama_resep: d.nama_resep,
-            kategori: (d.kategori as any) || "Menu Lengkap",
+            kategori: (d.kategori as StandardRecipe['kategori']) || 'Lainnya',
             kalori: Math.round(Number(d.total_kalori) || 0),
             protein: Math.round((Number(d.total_protein) || 0) * 10) / 10,
             hpp: Math.round(Number(d.hpp_per_porsi) || 0),
             deskripsi: d.deskripsi || undefined,
           }));
-
-          // Merge: Supabase recipes at top, followed by mock recipes
-          setRecipes([...mapped, ...MOCK_STANDARD_RECIPES]);
+          setRecipes(mapped);
+        } else {
+          setRecipes([]);
         }
       } catch (err) {
-        console.warn("Could not fetch recipes from Supabase:", err);
+        console.warn('Could not fetch recipes:', err);
+        setRecipes([]);
       } finally {
         setLoadingRecipes(false);
       }
     };
-
-    fetchSupabaseRecipes();
+    fetchRecipes();
   }, []);
+
 
   // Drag handlers
   const handleDragStart = (event: DragStartEvent) => {
@@ -245,6 +296,7 @@ export function MenuPlanner() {
   // Reset All
   const handleResetAll = () => {
     setDays(INITIAL_DAYS);
+    setPlanId(null);
   };
 
   // Clear Entire Week
@@ -340,6 +392,29 @@ export function MenuPlanner() {
                   type="button"
                   variant="outline"
                   size="sm"
+                  onClick={loadPlanFromApi}
+                  className="text-xs gap-1 h-8 text-blue-600 hover:bg-blue-50 hover:border-blue-200 dark:text-blue-400 dark:hover:bg-blue-950/40 dark:hover:border-blue-900/60"
+                  title="Muat plan terakhir dari database"
+                >
+                  <BookOpen className="h-3 w-3" />
+                  Muat Plan
+                </Button>
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  onClick={savePlanToApi}
+                  disabled={savingPlan}
+                  className="text-xs gap-1 h-8 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Simpan plan saat ini ke database"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  {savingPlan ? 'Menyimpan...' : 'Simpan Plan'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
                   onClick={handleClearEntireWeek}
                   className="text-xs gap-1 h-8 text-red-600 hover:bg-red-50 hover:border-red-200 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:border-red-900/60"
                   title="Kosongkan jadwal 1 minggu"
@@ -349,6 +424,22 @@ export function MenuPlanner() {
               </div>
             </div>
           </CardHeader>
+
+          {/* Save Status Notification */}
+          {saveStatus.type && (
+            <div className={`mx-4 -mt-2 mb-3 p-3 rounded-lg border text-xs font-medium flex items-center gap-2 transition-all ${
+              saveStatus.type === 'success' 
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                : saveStatus.type === 'error'
+                ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
+                : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300'
+            }`}>
+              {saveStatus.type === 'success' && <CheckCircle2 className="h-4 w-4" />}
+              {saveStatus.type === 'error' && <AlertTriangle className="h-4 w-4" />}
+              {saveStatus.type === 'info' && <Sparkles className="h-4 w-4" />}
+              <span>{saveStatus.message}</span>
+            </div>
+          )}
 
           <CardContent className="pt-0">
             {/* 4 Cards Summary Validation Bar */}

@@ -13,16 +13,6 @@ interface RecipeSidebarProps {
   isLoading?: boolean;
 }
 
-const CATEGORIES = [
-  "Semua",
-  "Menu Lengkap",
-  "Makanan Pokok",
-  "Lauk Hewani",
-  "Lauk Nabati",
-  "Sayuran",
-  "Buah & Susu",
-];
-
 export function RecipeSidebar({
   recipes,
   onQuickAdd,
@@ -30,6 +20,11 @@ export function RecipeSidebar({
 }: RecipeSidebarProps) {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Semua");
+
+  const categories = useMemo(() => {
+    const unique = Array.from(new Set(recipes.map((r) => r.kategori)));
+    return ["Semua", ...unique];
+  }, [recipes]);
 
   const filteredRecipes = useMemo(() => {
     return recipes.filter((r) => {
@@ -42,6 +37,7 @@ export function RecipeSidebar({
       return matchCat && matchSearch;
     });
   }, [recipes, selectedCategory, search]);
+
 
   return (
     <div className="w-full lg:w-80 shrink-0 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm flex flex-col h-[740px] transition-colors">
@@ -74,9 +70,9 @@ export function RecipeSidebar({
           />
         </div>
 
-        {/* Category Pills */}
+        {/* Category Pills — dibuat dinamis dari data resep yang tersedia */}
         <div className="mt-2.5 flex items-center gap-1 overflow-x-auto pb-1 text-[11px] no-scrollbar">
-          {CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <button
               key={cat}
               type="button"
@@ -91,6 +87,7 @@ export function RecipeSidebar({
             </button>
           ))}
         </div>
+
       </div>
 
       {/* Draggable Recipe List */}
@@ -100,10 +97,19 @@ export function RecipeSidebar({
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent mx-auto mb-2" />
             Memuat resep standar...
           </div>
+        ) : filteredRecipes.length === 0 && recipes.length === 0 ? (
+          <div className="py-10 text-center text-xs text-slate-400 dark:text-slate-500 space-y-1.5 px-3">
+            <Utensils className="h-6 w-6 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+            <p className="font-semibold text-slate-500 dark:text-slate-400">Belum ada resep tersimpan</p>
+            <p className="text-[10px] leading-relaxed">
+              Buat resep terlebih dahulu di <span className="font-semibold text-emerald-600 dark:text-emerald-400">Recipe Builder</span>, lalu simpan ke Supabase agar muncul di sini.
+            </p>
+          </div>
         ) : filteredRecipes.length === 0 ? (
           <div className="py-12 text-center text-xs text-slate-400 dark:text-slate-500">
             Tidak ada resep yang sesuai kata kunci.
           </div>
+
         ) : (
           filteredRecipes.map((recipe) => (
             <DraggableRecipeItem

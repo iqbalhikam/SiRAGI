@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
-import { Navbar } from "@/components/layout/navbar";
 import { RabForm } from "@/components/rab/rab-form";
 import { ExportSection } from "@/components/rab/export-modal";
 import {
@@ -69,11 +68,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 transition-colors">
-      <Navbar
-        spreadsheetUrl={spreadsheetUrl}
-        isDbReady={Boolean(spreadsheetId && !provisioning)}
-      />
-
       <main className="flex-1 pb-16">
         {status === "loading" && (
           <div className="flex h-96 items-center justify-center">

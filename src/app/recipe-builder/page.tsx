@@ -1,15 +1,12 @@
 "use client";
 
 import React from "react";
-import { Navbar } from "@/components/layout/navbar";
 import { RecipeBuilderForm } from "@/components/recipe/recipe-builder-form";
 import { ChefHat, Database, Calculator } from "lucide-react";
 
 export default function RecipeBuilderPage() {
   return (
     <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 transition-colors">
-      <Navbar />
-
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Page Header */}
         <div className="mb-8">
